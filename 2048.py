@@ -14,6 +14,7 @@ pygame.init()
 pygame.display.set_caption("Original 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
+TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
 
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
 
@@ -41,12 +42,15 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.font = TILE_FONT
+        self.timer_font = TIMER_FONT
         self.game_over = False
         self.moving_animation = False
         self.animation_progress = 0
         self.animation_direction = None
         self.start_position = {}
         self.end_position = {}
+        self.start_time = pygame.time.get_ticks()
+        self.game_end_time = 0
         
         
         
@@ -216,7 +220,15 @@ class GAME2048:
                 if self.grid[row][col] == self.grid[row + 1][col]:
                     return False
         return True
-                
+    
+    def get_elapsed_time(self):
+        if self.game_over:
+            return self.game_end_time
+        else:
+            return (pygame.time.get_ticks() - self.start_time) / 1000.0
+        
+    def record_game_end_time(self):
+        self.game_end_time = (pygame.time.get_ticks() - self.start_time) / 1000.0
             
             
     def draw(self, screen):
@@ -226,7 +238,11 @@ class GAME2048:
         score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
         moves_text = self.font.render(f"Moves: {self.moves}", True, (255, 255, 255))
         
+        elasped_time = self.get_elapsed_time()
+        time_text = self.timer_font.render(f"Time: {elasped_time:.1f}s", True, (255, 255, 255))
+        
         screen.blit(score_text, (20, 20))
+        screen.blit(time_text, (20, 55))
         
         moves_rect = moves_text.get_rect(topright=(WINDOW_SIZE - 20, 20))
         screen.blit(moves_text, moves_rect)
@@ -357,6 +373,7 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.game_over = False
+        self.start_time = pygame.time.get_ticks()
         self.add_random_tile()
         self.add_random_tile()                   
         
@@ -392,16 +409,13 @@ def run():
                             
                         if moved:
                             game.game_over = game.is_game_over()
+                            if game.game_over:
+                                game.record_game_end_time()
                             
         if not game.game_over:
             game.update_animation(dt)
-            #if not game.moving_animation:
-             #   game.game_over = game.is_game_over()
-                    
-        #game.update_animation(dt)
         
         game.draw(screen)
-        
         pygame.display.flip()
         
     pygame.quit()

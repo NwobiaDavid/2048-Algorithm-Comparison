@@ -12,9 +12,10 @@ WINDOW_SIZE = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1)*GAP
 T_WIN_SIZE = WINDOW_SIZE + HEADER_HEIGHT
 
 pygame.init()
-pygame.display.set_caption("Original 2048")
+pygame.display.set_caption("Expectimax 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
+TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
 
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
 
@@ -159,12 +160,18 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.font = TILE_FONT
+        self.timer_font = TIMER_FONT
         self.game_over = False
         self.moving_animation = False
         self.animation_progress = 0
         self.animation_direction = None
         self.start_position = {}
         self.end_position = {}
+        
+        self.start_time = pygame.time.get_ticks()
+        self.pause_time = 0
+        self.total_paused_time = 0
+        self.is_timer_running = True
         
         
         
@@ -334,7 +341,32 @@ class GAME2048:
                 if self.grid[row][col] == self.grid[row + 1][col]:
                     return False
         return True
-                
+    
+    def get_elapsed_time(self):
+        if self.game_over:
+            return self.game_end_time
+        elif self.is_timer_running:
+            current_time = pygame.time.get_ticks()
+            elapsed = (current_time - self.start_time - self.total_paused_time) / 1000.0
+            return max(elapsed, 0)
+        else:
+            return self.paused_time
+        
+    def pause_timer(self):
+        if self.is_timer_running:
+            self.current_time = pygame.time.get_ticks()
+            self.elapsed_before_pause = (self.current_time - self.start_time - self.total_paused_time) / 1000.0
+            self.is_timer_running = False
+            self.pause_time = self.elapsed_before_pause
+            
+    def resume_timer(self):
+        if not self.is_timer_running:
+            self.pause_start_time = pygame.time.get_ticks()
+            self.is_timer_running = True
+    
+    def record_game_end_time(self):
+        current_time = pygame.time.get_ticks()
+        self.game_end_time = (current_time - self.start_time - self.total_paused_time) / 1000.0       
             
             
     def draw(self, screen):
@@ -344,7 +376,11 @@ class GAME2048:
         score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
         moves_text = self.font.render(f"Moves: {self.moves}", True, (255, 255, 255))
         
+        elasped_time = self.get_elapsed_time()
+        time_text = self.timer_font.render(f"Time: {elasped_time:.1f}s", True, (255, 255, 255))
+        
         screen.blit(score_text, (20, 20))
+        screen.blit(time_text, (20, 55))
         
         moves_rect = moves_text.get_rect(topright=(WINDOW_SIZE - 20, 20))
         screen.blit(moves_text, moves_rect)
@@ -475,6 +511,9 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.game_over = False
+        self.start_time = pygame.time.get_ticks()
+        self.total_paused_time = 0
+        self.is_timer_running = True
         self.add_random_tile()
         self.add_random_tile()                   
         
@@ -506,6 +545,10 @@ def run():
                     elif event.key == pygame.K_SPACE:
                         ai_playing = not ai_playing
                         print("AI Mode:", "ON" if ai_playing else "OFF")
+                        if ai_playing:
+                            game.resume_timer()
+                        else:
+                            game.pause_timer()
                         
         if ai_playing and not game.moving_animation and not game.game_over and ai_move_delay >= ai_move_interval:
             ai_move_delay = 0
@@ -513,6 +556,9 @@ def run():
             if ai_move:
                 game.move(ai_move)
                 game.game_over = game.is_game_over()
+                if game.game_over:
+                    game.record_game_end_time()
+                
                                         
         if not game.game_over:
             game.update_animation(dt)
