@@ -1,5 +1,6 @@
 import pygame
 import random
+import copy
 pygame.font.init()
 
 GRID_SIZE = 4
@@ -10,10 +11,11 @@ WINDOW_SIZE = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1)*GAP
 
 T_WIN_SIZE = WINDOW_SIZE + HEADER_HEIGHT
 
+pygame.init()
+pygame.display.set_caption("Original 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
 
-pygame.init()
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
 
 TILE_COLORS = {
@@ -30,6 +32,123 @@ TILE_COLORS = {
     1024: (237, 197, 63),
     2048: (237, 194, 46),
 }
+
+def get_empty_cells(grid):
+    empty_cells = []
+    for i in range(GRID_SIZE):
+        for j in range(GRID_SIZE):
+            if grid[i][j] == 0:
+                empty_cells.append((i, j))
+    return empty_cells
+
+def evaluate_board(grid):
+    score = 0
+    
+    monotonicity_weight = 10
+    monotonicity_score = 0
+    
+    for row in grid:
+        for i in range(len(row) - 1):
+            if row[i] >= row[i + 1]:
+                monotonicity_score += 1
+    
+    for col in range(GRID_SIZE):
+        for row in range(GRID_SIZE - 1):
+            if grid[row][col] >= grid[row + 1][col]:
+                monotonicity_score += 1
+                
+    score += monotonicity_score * monotonicity_weight
+    
+    empty_count = len(get_empty_cells(grid))
+    score += empty_count * 100
+    
+    max_title = 0
+    for row in grid:
+        if max(row) > max_title:
+            max_title = max(row)
+    
+    corner_positions = [(0,0), (0, GRID_SIZE-1), (GRID_SIZE-1, 0), (GRID_SIZE-1, GRID_SIZE-1)]
+    
+    corners = [grid[r][c] for r, c in corner_positions]
+    if max_title in corners:
+        bonus = max_title * 5
+        score += bonus
+        
+    smoothness_penalty = 0
+    for i in range(GRID_SIZE):
+        for j in range(GRID_SIZE):
+            if grid[i][j] != 0:
+                if j < GRID_SIZE - 1 and grid[i][j+1] != 0:
+                    smoothness_penalty += abs(grid[i][j] - grid[i][j+1])
+                if i < GRID_SIZE - 1 and grid[i+1][j] != 0:
+                    smoothness_penalty += abs(grid[i][j] - grid[i+1][j])
+    
+    score -= smoothness_penalty * 2
+    
+    return score
+    
+    
+def expectimax(grid, depth, is_max_node):
+    
+    if depth == 0:
+        return evaluate_board(grid), None
+    
+    if is_max_node:
+        best_score = float('-inf')
+        best_move = None
+            
+        for direction in ["up", "down", "left", "right"]:
+            grid_copy = copy.deepcopy(grid)
+            
+            game_temp = GAME2048()
+            game_temp.grid = grid_copy
+            
+            moved = False
+            if direction == "left":
+                moved = game_temp.move_left()
+            elif direction == "right":
+                moved = game_temp.move_right()
+            elif direction == "up":
+                moved = game_temp.move_up()
+            elif direction == "down":
+                moved = game_temp.move_down()
+            
+            if moved:
+                score, _ = expectimax(game_temp.grid, depth - 1, False)
+                    
+                if score > best_score:
+                    best_score = score
+                    best_move = direction
+                        
+        return best_score, best_move
+    else:
+        empty_cells = get_empty_cells(grid)
+        if not empty_cells:
+            return evaluate_board(grid), None
+    
+        total_score = 0
+    
+        for row, col in empty_cells:
+            grid_2 = copy.deepcopy(grid)
+            grid_2[row][col] = 2
+            score_2, _ = expectimax(grid_2, depth - 1, True)
+            total_score += 0.9 * score_2 / len(empty_cells)
+            
+            grid_4 = copy.deepcopy(grid)
+            grid_4[row][col] = 4
+            score_4, _ = expectimax(grid_4, depth - 1, True)
+            total_score += 0.1 * score_4 / len(empty_cells)
+            
+        return total_score, None
+    
+
+def get_ai_move(current_grid, depth=4):
+    _, best_move = expectimax(current_grid, depth, True)
+    return best_move
+    
+    
+    
+    
 class GAME2048:
     def __init__(self):
         self.grid = [[0,0,0,0],
@@ -367,40 +486,38 @@ def run():
     clock = pygame.time.Clock()
     running = True
     
+    ai_playing = True
+    ai_move_delay = 0
+    ai_move_interval = 100
+    
     while running:
         dt = clock.tick(60) / 1000.0
+        ai_move_delay += 1
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
-                if game.game_over:
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
                         game.reset_game()
-                else:
-                    if not game.moving_animation:
-                        moved = False
-                        if event.key == pygame.K_LEFT:
-                            moved = game.move("left")
-                        elif event.key == pygame.K_RIGHT:
-                            moved = game.move("right")
-                        elif event.key == pygame.K_UP:
-                            moved = game.move("up")
-                        elif event.key == pygame.K_DOWN:
-                            moved = game.move("down")
-                            
-                        if moved:
-                            game.game_over = game.is_game_over()
-                            
+                    elif event.key == pygame.K_SPACE:
+                        ai_playing = not ai_playing
+                        print("AI Mode:", "ON" if ai_playing else "OFF")
+                        
+        if ai_playing and not game.moving_animation and not game.game_over and ai_move_delay >= ai_move_interval:
+            ai_move_delay = 0
+            ai_move = get_ai_move(game.grid, depth=4)
+            if ai_move:
+                game.move(ai_move)
+                game.game_over = game.is_game_over()
+                                        
         if not game.game_over:
             game.update_animation(dt)
-            #if not game.moving_animation:
-             #   game.game_over = game.is_game_over()
-                    
-        #game.update_animation(dt)
         
-        game.draw(screen)
-        
+        game.draw(screen)   
         pygame.display.flip()
         
     pygame.quit()
