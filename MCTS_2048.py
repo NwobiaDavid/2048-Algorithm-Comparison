@@ -1,5 +1,8 @@
 import pygame
 import random
+import math
+from copy import deepcopy
+
 pygame.font.init()
 
 GRID_SIZE = 4
@@ -11,7 +14,7 @@ WINDOW_SIZE = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1)*GAP
 T_WIN_SIZE = WINDOW_SIZE + HEADER_HEIGHT
 
 pygame.init()
-pygame.display.set_caption("Original 2048")
+pygame.display.set_caption("MCTS 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
 TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
@@ -28,10 +31,127 @@ TILE_COLORS = {
     64: (246, 94, 59),
     128: (237, 207, 114),
     256: (237, 204, 97),
-    512: (237, 200, 80),
+   512: (237, 200, 80),
     1024: (237, 197, 63),
     2048: (237, 194, 46),
 }
+
+class MCTSNode:
+    def __init__(self, state, parent=None, action=None):
+        self.state = state
+        self.parent = parent
+        self.action = action
+        self.children = []
+        self.visits = 0
+        self.value = 0.0
+        self.untried_actions = ["up", "dowm", "left", "right"]    
+        
+    def is_fully_expanded(self):
+        return len(self.untried_actions) == 0
+    
+    def best_child(self, exploration_weight=math.sqrt(2)):
+        choices_weights = [
+            (child.value / child.visits) + 
+            exploration_weight * math.sqrt(math.log(self.visits) / child.visits)
+            for child in self.children
+        ]
+        return self.children[choices_weights.index(max(choices_weights))]
+    
+    def expand(self):
+        action = self.untried_actions.pop(random.randint(0, len(self.untried_actions)-1))
+
+        temp_game = GAME2048()
+        temp_game.grid = [row[:] for row in [self.state[i:i+4] for i in range(0, 16, 4)]]
+        
+        original_grid = [row[:] for row in temp_game.grid]
+        moved = temp_game.move(action)
+        
+        if moved or original_grid != temp_game.grid:
+            new_State = temp_game.get_state()
+            child_node = MCTSNode(state=new_State, parent=self, action=action)
+            self.children.append(child_node)
+            return child_node
+        else:
+            if len(self.untried_actions) > 0:
+                return self.expand()
+            return None
+        
+def state_is_terminal(game_instance):
+    return game_instance.is_game_over()
+    
+def calculate_reward(game_instance):
+    empty_tiles = sum(1 for row in game_instance.grid for cell in row if cell == 0)
+    max_tile = max(max(row) for row in game_instance.grid)
+    score = game_instance.score
+        
+    reward = score + (empty_tiles * 100) + (max_tile * 10)
+        
+    if game_instance.is_game_over():
+        reward -= 1000
+            
+    return reward
+    
+def mcts_search(game_instance, iterations=100):
+    root = MCTSNode(state=game_instance.get_state())
+        
+    for _ in range(iterations):
+        node = root
+        temp_game = GAME2048()
+            
+        while not state_is_terminal(temp_game) and node.is_fully_expanded():
+            node = node.best_child()
+            temp_game.grid = [row[:] for row in [node.state[i:i+4] for i in range(0, 16, 4)]]
+                
+        if not state_is_terminal(temp_game) and len(node.untried_actions) > 0:
+            child = node.expand()
+            if child is not None:
+                node = child
+                temp_game.grid = [row[:] for row in [node.state[i:i+4] for i in range(0, 16, 4)]]
+                    
+                    
+        rollout_game = GAME2048()
+        rollout_game.grid = [row[:] for row in [node.state[i:i+4] for i in range(0, 16, 4)]]
+            
+        simulation_steps = 0
+        max_simulation_steps = 20
+        while not state_is_terminal(rollout_game) and simulation_steps < max_simulation_steps:
+            possible_moves = ["up", "down", "left", "right"] 
+            random.shuffle(possible_moves)
+            move_made = False
+                
+            for action in possible_moves:
+                original_grid = [row[:] for row in rollout_game.grid]  
+                moved = rollout_game.move(action)
+                if moved or original_grid != rollout_game.grid:
+                    move_made = True
+                    break
+                    
+            if not move_made:
+                break
+            simulation_steps += 1
+                
+                
+        reward = calculate_reward(rollout_game)
+        current_node = node
+        while current_node is not None:
+            current_node.visits += 1
+            current_node.value += reward
+            current_node = current_node.parent
+                
+    if root.children:
+        best_child = max(root.children, key=lambda c: c.visits) 
+        return best_child.action
+    else:
+        possible_moves = ["up", "down", "left", "right"]
+        random.shuffle(possible_moves)
+        for action in possible_moves:
+            temp_game = deepcopy(game_instance)
+            original_grid = [row[:] for row in temp_game.grid]
+            if temp_game.move(action) or original_grid != temp_game.grid:
+                return action
+        return "up"
+        
+    
 class GAME2048:
     def __init__(self):
         self.grid = [[0,0,0,0],
@@ -53,7 +173,9 @@ class GAME2048:
         self.game_end_time = 0
         
         
-        
+    def get_state(self):
+        return [cell for row in self.grid for cell in row]
+
     def add_random_tile(self):
         empty_tiles = []
         
@@ -385,6 +507,11 @@ def run():
     clock = pygame.time.Clock()
     running = True
     
+    ai_mode = True
+    ai_thinking = False
+    ai_delay = 0.2
+    last_ai_move_time = 0
+    
     while running:
         dt = clock.tick(60) / 1000.0
         
@@ -395,8 +522,11 @@ def run():
                 if game.game_over:
                     if event.key == pygame.K_r:
                         game.reset_game()
+                elif event.key == pygame.K_SPACE:
+                    ai_mode = not ai_mode
+                    print(f"AI Mode: {'ON' if ai_mode else 'OFF'}")
                 else:
-                    if not game.moving_animation:
+                    if not game.moving_animation and not ai_mode:
                         moved = False
                         if event.key == pygame.K_LEFT:
                             moved = game.move("left")
@@ -411,9 +541,22 @@ def run():
                             game.game_over = game.is_game_over()
                             if game.game_over:
                                 game.record_game_end_time()
-                            
-        if not game.game_over:
-            game.update_animation(dt)
+                                
+        if ai_mode and not game.game_over and not game.moving_animation:
+            current_time = pygame.time.get_ticks() / 1000.0
+            if current_time - last_ai_move_time >= ai_delay:
+                best_action = mcts_search(game, iterations=100)
+                moved = game.move(best_action)
+                
+                if moved:
+                    game.game_over = game.is_game_over()
+                    if game.game_over:
+                        game.record_game_end_time()
+                        
+                last_ai_move_time = current_time
+                
+        # if not game.game_over:
+        #     game.update_animation(dt)
         
         game.draw(screen)
         pygame.display.flip()
