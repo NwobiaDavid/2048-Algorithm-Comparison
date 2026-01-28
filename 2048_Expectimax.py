@@ -2,6 +2,7 @@ import pygame
 import random
 import copy
 import time
+from collections import defaultdict
 pygame.font.init()
 
 GRID_SIZE = 4
@@ -43,212 +44,415 @@ def get_empty_cells(grid):
                 empty_cells.append((i, j))
     return empty_cells
 
-# def evaluate_board(grid):
-#     score = 0
+def tile_exp(grid, r, c):
+    val = grid[r][c]
+    if val == 0:
+        return 0
+    exp = 0
+    temp_val = val
+    while temp_val > 1:
+        temp_val >>= 1
+        exp += 1
+    return exp
+
+def tile_val(grid, r, c):
+    return grid[r][c]
+
+def transpose_grid(grid):
+    return [[grid[j][i] for j in range(GRID_SIZE)] for i in range(GRID_SIZE)]
+
+def flip_h(grid):
+    return [row[::-1] for row in grid]
+
+def flip_v(grid):
+    return grid[::-1]
+
+def compress_row(row):
+    new_row = [num for num in row if num != 0]
+    new_row.extend([0] * (len(row) - len(new_row)))
+    return new_row
+
+def merge_row(row):
+    merged = []
+    skip_next = False
     
-#     monotonicity_weight = 10
-#     monotonicity_score = 0
-    
-#     for row in grid:
-#         for i in range(len(row) - 1):
-#             if row[i] >= row[i + 1]:
-#                 monotonicity_score += 1
-    
-#     for col in range(GRID_SIZE):
-#         for row in range(GRID_SIZE - 1):
-#             if grid[row][col] >= grid[row + 1][col]:
-#                 monotonicity_score += 1
-                
-#     score += monotonicity_score * monotonicity_weight
-    
-#     empty_count = len(get_empty_cells(grid))
-#     score += empty_count * 100
-    
-#     max_title = 0
-#     for row in grid:
-#         if max(row) > max_title:
-#             max_title = max(row)
-    
-#     corner_positions = [(0,0), (0, GRID_SIZE-1), (GRID_SIZE-1, 0), (GRID_SIZE-1, GRID_SIZE-1)]
-    
-#     corners = [grid[r][c] for r, c in corner_positions]
-#     if max_title in corners:
-#         bonus = max_title * 5
-#         score += bonus
+    for i in range(len(row)):
+        if skip_next:
+            skip_next = False
+            merged.append(0)
+            continue
         
-#     smoothness_penalty = 0
-#     for i in range(GRID_SIZE):
-#         for j in range(GRID_SIZE):
-#             if grid[i][j] != 0:
-#                 if j < GRID_SIZE - 1 and grid[i][j+1] != 0:
-#                     smoothness_penalty += abs(grid[i][j] - grid[i][j+1])
-#                 if i < GRID_SIZE - 1 and grid[i+1][j] != 0:
-#                     smoothness_penalty += abs(grid[i][j] - grid[i+1][j])
-    
-#     score -= smoothness_penalty * 2
-    
-#     return score
+        if i < len(row) - 1 and row[i] == row[i + 1] and row[i] != 0:
+            merged_value = row[i] * 2
+            merged.append(merged_value)
+            skip_next = True
+        else:
+            merged.append(row[i])
+            
+    merged = [num for num in merged if num != 0]
+    merged.extend([0] * (len(row) - len(merged)))
+    return merged
 
-def evaluate_board(grid):
-    grid_tuple = tuple(map(tuple, grid))
+def apply_move(grid, direction):
+    grid_copy = [row[:] for row in grid]
+    original_grid = [row[:] for row in grid_copy]
     
-    def eval_monotone(grid):
-        L = R = U = D = 0
-        LR = UD = 0
-        range4 = range(4)
-        range3 = range(3)
-        
-        for x in range4:
-            m = 0
-            for y in range3:
-                if grid[x][y] and grid[x][y] >= grid[x][y+1]:
-                    m += 1
-                    L += m ** 2 * 4
-                else:
-                    L -= abs((grid[x][y] or 0) - (grid[x][y+1] or 0)) * 1.5
-                    m = 0
-                    
-            m = 0
-            for y in range3:
-                if grid[x][y] <= grid[x][y+1] and grid[x][y+1]:
-                    m += 1
-                    R += m ** 2 * 4
-                else:
-                    R -= abs((grid[x][y] or 0) - (grid[x][y+1] or 0)) * 1.5
-                    m = 0
-                    
-        LR = max(L, R)
-        
-        for y in range4:
-            m = 0
-            for x in range3:
-                if grid[x][y]  and grid[x][y] >= grid[x+1][y]:
-                    m += 1
-                    U += m ** 2 * 4
-                else:
-                    U -= abs((grid[x][y] or 0) - (grid[x+1][y] or 0)) * 1.5
-                    m = 0
-                    
-            m = 0
-            for x in range3:
-                if grid[x][y] <= grid[x+1][y] and grid[x+1][y]:
-                    m += 1
-                    D += m ** 2 * 4
-                else:
-                    D -= abs((grid[x][y] or 0) - (grid[x+1][y] or 0)) * 1.5
-                    m = 0
-                
-        UD = max(U, D)
-        return LR + UD
-
-    def eval_smoothness(grid):
-        score_smooth = 0
-        INF = 100000000
-        for x in range(4):
-            for y in range(4):
-                s = INF
-                if x > 0: s = min(s, abs((grid[x][y] or 2) - (grid[x-1][y] or 2)))
-                if y > 0: s = min(s, abs((grid[x][y] or 2) - (grid[x][y-1] or 2)))
-                if x < 3: s = min(s, abs((grid[x][y] or 2) - (grid[x+1][y] or 2)))
-                if y < 3: s = min(s, abs((grid[x][y] or 2) - (grid[x][y+1] or 2)))
-                score_smooth -= 5
-        return score_smooth
-
-    def eval_free(grid):
-        free = 0
-        for row in grid:
-            free += row.count(0)
-        return -(16-free)**2
-
-    score_monotone = eval_monotone(grid_tuple)
-    score_smooth = eval_smoothness(grid_tuple)
-    score_free = eval_free(grid_tuple)
+    if direction == "left":
+        for i in range(GRID_SIZE):
+            compressed_row = compress_row(grid_copy[i])
+            merged_row = merge_row(compressed_row)
+            grid_copy[i] = merged_row
+    elif direction == "right":
+        for i in range(GRID_SIZE):
+            reversed_row = grid_copy[i][::-1]
+            compressed_row = compress_row(reversed_row)
+            merged_row = merge_row(compressed_row)
+            grid_copy[i] = merged_row[::-1]
+    elif direction == "up":
+        grid_copy = transpose_grid(grid_copy)
+        for i in range(GRID_SIZE):
+            compressed_row = compress_row(grid_copy[i])
+            merged_row = merge_row(compressed_row)
+            grid_copy[i] = merged_row
+        grid_copy = transpose_grid(grid_copy)
+    elif direction == "down":
+        grid_copy = transpose_grid(grid_copy)
+        for i in range(GRID_SIZE):
+            reversed_row = grid_copy[i][::-1]
+            compressed_row = compress_row(reversed_row)
+            merged_row = merge_row(compressed_row)
+            grid_copy[i] = merged_row[::-1]
+        grid_copy = transpose_grid(grid_copy)
     
+    return grid_copy, original_grid != grid_copy
+
+def count_empty(grid):
+    count = 0
+    for row in grid:
+        for cell in row:
+            if cell == 0:
+                count += 1
+    return count
+
+def count_distinct_tiles(grid):
+    distinct = set()
+    for row in grid:
+        for cell in row:
+            if cell != 0:
+                distinct.add(cell)
+    return len(distinct)
+
+def get_max_tile(grid):
+    max_val = 0
+    for row in grid:
+        for cell in row:
+            if cell > max_val:
+                max_val = cell
+    return max_val
+
+def score_heuristic(grid):
     score = 0
-    score += score_smooth * 0.1
-    score += score_monotone * 1.0
-    score += score_free * 2.7
-
+    for row in grid:
+        for val in row:
+            if val >= 4:  
+                k = 0
+                temp_val = val
+                while temp_val > 1:
+                    temp_val //= 2
+                    k += 1
+                score += (k - 1) * val
     return score
-                
-def expectimax(grid, depth, is_max_node, cache=None):
+
+def merge_heuristic(grid):
+    return count_empty(grid)
+
+def corner_heuristic(grid):
+    bonuses = []
+    
+    
+    lower_left = (10 * tile_val(grid, 0, 3) + 5 * tile_val(grid, 0, 2) + 2 * tile_val(grid, 0, 1) + 1 * tile_val(grid, 0, 0) +
+                  5  * tile_val(grid, 1, 3) + 3 * tile_val(grid, 1, 2) + 1 * tile_val(grid, 1, 1) +
+                  2  * tile_val(grid, 2, 3) + 1 * tile_val(grid, 2, 2) +
+                  1  * tile_val(grid, 3, 3))
+    bonuses.append(lower_left)
+    
+    upper_left = (10 * tile_val(grid, 3, 3) + 5 * tile_val(grid, 3, 2) + 2 * tile_val(grid, 3, 1) + 1 * tile_val(grid, 3, 0) +
+                  5  * tile_val(grid, 2, 3) + 3 * tile_val(grid, 2, 2) + 1 * tile_val(grid, 2, 1) +
+                  2  * tile_val(grid, 1, 3) + 1 * tile_val(grid, 1, 2) +
+                  1  * tile_val(grid, 0, 3))
+    bonuses.append(upper_left)
+    
+    lower_right = (10 * tile_val(grid, 0, 0) + 5 * tile_val(grid, 0, 1) + 2 * tile_val(grid, 0, 2) + 1 * tile_val(grid, 0, 3) +
+                   5  * tile_val(grid, 1, 0) + 3 * tile_val(grid, 1, 1) + 1 * tile_val(grid, 1, 2) +
+                   2  * tile_val(grid, 2, 0) + 1 * tile_val(grid, 2, 1) +
+                   1  * tile_val(grid, 3, 0))
+    bonuses.append(lower_right)
+    
+    upper_right = (10 * tile_val(grid, 3, 0) + 5 * tile_val(grid, 3, 1) + 2 * tile_val(grid, 3, 2) + 1 * tile_val(grid, 3, 3) +
+                   5  * tile_val(grid, 2, 0) + 3 * tile_val(grid, 2, 1) + 1 * tile_val(grid, 2, 2) +
+                   2  * tile_val(grid, 1, 0) + 1 * tile_val(grid, 1, 1) +
+                   1  * tile_val(grid, 0, 0))
+    bonuses.append(upper_right)
+    
+    return max(bonuses)
+
+def wall_gap_heuristic(grid):
+    def _wall_gap_helper(g):
+        top = ((tile_exp(g, 3, 3) << 40) + (tile_exp(g, 3, 2) << 36) + (tile_exp(g, 3, 1) << 32) +
+               (tile_exp(g, 2, 3) << 20) + (tile_exp(g, 2, 2) << 24) + (tile_exp(g, 2, 1) << 28) +
+               (tile_exp(g, 1, 3) << 16) + (tile_exp(g, 1, 2) << 12) + (tile_exp(g, 1, 1) << 8))
+        
+        bottom = ((tile_exp(g, 0, 0) << 40) + (tile_exp(g, 0, 1) << 36) + (tile_exp(g, 0, 2) << 32) +
+                  (tile_exp(g, 1, 0) << 20) + (tile_exp(g, 1, 1) << 24) + (tile_exp(g, 1, 2) << 28) +
+                  (tile_exp(g, 2, 0) << 16) + (tile_exp(g, 2, 1) << 12) + (tile_exp(g, 2, 2) << 8))
+        
+        left = ((tile_exp(g, 0, 3) << 40) + (tile_exp(g, 1, 3) << 36) + (tile_exp(g, 2, 3) << 32) +
+                (tile_exp(g, 0, 2) << 20) + (tile_exp(g, 1, 2) << 24) + (tile_exp(g, 2, 2) << 28) +
+                (tile_exp(g, 0, 1) << 16) + (tile_exp(g, 1, 1) << 12) + (tile_exp(g, 2, 1) << 8))
+        
+        right = ((tile_exp(g, 3, 0) << 40) + (tile_exp(g, 2, 0) << 36) + (tile_exp(g, 1, 0) << 32) +
+                 (tile_exp(g, 3, 1) << 20) + (tile_exp(g, 2, 1) << 24) + (tile_exp(g, 1, 1) << 28) +
+                 (tile_exp(g, 3, 2) << 16) + (tile_exp(g, 2, 2) << 12) + (tile_exp(g, 1, 2) << 8))
+        
+        return max(top, bottom, left, right)
+    
+    return max(_wall_gap_helper(grid), _wall_gap_helper(transpose_grid(grid))) + score_heuristic(grid)
+
+def full_wall_heuristic(grid):
+    def _full_wall_helper(g):
+        top = ((tile_exp(g, 3, 3) << 40) + (tile_exp(g, 3, 2) << 36) + (tile_exp(g, 3, 1) << 32) + (tile_exp(g, 3, 0) << 28) +
+               (tile_exp(g, 2, 3) << 12) + (tile_exp(g, 2, 2) << 16) + (tile_exp(g, 2, 1) << 20) + (tile_exp(g, 2, 0) << 24) +
+               (tile_exp(g, 1, 3) << 8))
+        
+        bottom = ((tile_exp(g, 0, 0) << 40) + (tile_exp(g, 0, 1) << 36) + (tile_exp(g, 0, 2) << 32) + (tile_exp(g, 0, 3) << 28) +
+                  (tile_exp(g, 1, 0) << 12) + (tile_exp(g, 1, 1) << 16) + (tile_exp(g, 1, 2) << 20) + (tile_exp(g, 0, 3) << 24) +
+                  (tile_exp(g, 2, 0) << 8))
+        
+        left = ((tile_exp(g, 0, 3) << 40) + (tile_exp(g, 1, 3) << 36) + (tile_exp(g, 2, 3) << 32) + (tile_exp(g, 3, 3) << 28) +
+                (tile_exp(g, 0, 2) << 12) + (tile_exp(g, 1, 2) << 16) + (tile_exp(g, 2, 2) << 20) + (tile_exp(g, 3, 2) << 24) +
+                (tile_exp(g, 0, 1) << 8))
+        
+        right = ((tile_exp(g, 3, 0) << 40) + (tile_exp(g, 2, 0) << 36) + (tile_exp(g, 1, 0) << 32) + (tile_exp(g, 0, 0) << 28) +
+                 (tile_exp(g, 3, 1) << 12) + (tile_exp(g, 2, 1) << 16) + (tile_exp(g, 1, 1) << 20) + (tile_exp(g, 0, 1) << 24) +
+                 (tile_exp(g, 3, 2) << 8))
+        
+        return max(top, bottom, left, right)
+    
+    return max(_full_wall_helper(grid), _full_wall_helper(transpose_grid(grid))) + score_heuristic(grid)
+
+
+def skewed_corner_heuristic(grid):
+    def _skewed_corner_helper(g):
+        top = (16 * tile_val(g, 3, 3) + 10 * tile_val(g, 3, 2) + 6 * tile_val(g, 3, 1) + 3 * tile_val(g, 3, 0) +
+               10 * tile_val(g, 2, 3) + 6  * tile_val(g, 2, 2) + 3 * tile_val(g, 2, 1) + 1 * tile_val(g, 2, 0) +
+               4  * tile_val(g, 1, 3) + 3  * tile_val(g, 1, 2) + 1 * tile_val(g, 1, 1) +
+               1  * tile_val(g, 0, 3) + 1  * tile_val(g, 0, 2))
+        
+        bottom = (16 * tile_val(g, 0, 0) + 10 * tile_val(g, 0, 1) + 6 * tile_val(g, 0, 2) + 3 * tile_val(g, 0, 3) +
+                  10 * tile_val(g, 1, 0) + 6  * tile_val(g, 1, 1) + 3 * tile_val(g, 1, 2) + 1 * tile_val(g, 1, 3) +
+                  4  * tile_val(g, 2, 0) + 3  * tile_val(g, 2, 1) + 1 * tile_val(g, 2, 2) +
+                  1  * tile_val(g, 3, 0) + 1  * tile_val(g, 3, 1))
+        
+        left = (16 * tile_val(g, 0, 3) + 10 * tile_val(g, 1, 3) + 6 * tile_val(g, 2, 3) + 3 * tile_val(g, 3, 3) +
+                10 * tile_val(g, 0, 2) + 6  * tile_val(g, 1, 2) + 3 * tile_val(g, 2, 2) + 1 * tile_val(g, 3, 2) +
+                4  * tile_val(g, 0, 1) + 3  * tile_val(g, 1, 1) + 1 * tile_val(g, 2, 1) +
+                1  * tile_val(g, 0, 0) + 1  * tile_val(g, 1, 0))
+        
+        right = (16 * tile_val(g, 3, 0) + 10 * tile_val(g, 2, 0) + 6 * tile_val(g, 1, 0) + 3 * tile_val(g, 0, 0) +
+                 10 * tile_val(g, 3, 1) + 6  * tile_val(g, 2, 1) + 3 * tile_val(g, 1, 1) + 1 * tile_val(g, 0, 1) +
+                 4  * tile_val(g, 3, 2) + 3  * tile_val(g, 2, 2) + 1 * tile_val(g, 1, 2) +
+                 1  * tile_val(g, 3, 3) + 1  * tile_val(g, 2, 3))
+        
+        return max(top, bottom, left, right)
+    
+    return max(_skewed_corner_helper(grid), _skewed_corner_helper(transpose_grid(grid)))
+
+
+def monotonicity_heuristic(grid):
+    
+    def calc_row_monotonicity(row_vals):
+        score = 0
+        
+        total_val = sum(max(val, 0) for val in row_vals)
+        
+        increasing = decreasing = 0
+        for i in range(len(row_vals) - 1):
+            val1 = row_vals[i]
+            val2 = row_vals[i + 1]
+            
+            if val1 >= val2 and val1 != 0:
+                increasing += 1
+            if val1 <= val2 and val2 != 0:
+                decreasing += 1
+        
+        monotonic_score = max(increasing, decreasing)
+        return monotonic_score * total_val
+    
+    total_score = 0
+    
+    for i in range(4):
+        row = grid[i]
+        total_score += calc_row_monotonicity(row)
+    
+    transposed = transpose_grid(grid)
+    for i in range(4):
+        col = transposed[i]
+        total_score += calc_row_monotonicity(col)
+    
+    max_monotonicity = 0
+    for i in range(4):
+        row = grid[i]
+        monotonicity = calc_row_monotonicity(row)
+        max_monotonicity = max(max_monotonicity, monotonicity)
+    
+    transposed = transpose_grid(grid)
+    for i in range(4):
+        col = transposed[i]
+        monotonicity = calc_row_monotonicity(col)
+        max_monotonicity = max(max_monotonicity, monotonicity)
+    
+    total_score += max_monotonicity * 8
+    
+    total_score += count_empty(grid)
+    
+    return max(0, total_score)
+
+def evaluate_board(grid, heuristic_idx=2):
+    
+    heuristics = [
+        score_heuristic,
+        merge_heuristic,
+        corner_heuristic,
+        wall_gap_heuristic,
+        full_wall_heuristic,
+        lambda g: full_wall_heuristic(g),
+        skewed_corner_heuristic,
+        monotonicity_heuristic
+    ]
+    
+    return heuristics[heuristic_idx](grid)
+
+def expectimax(grid, depth, is_max_node, cache=None, depth_limit=4, fours_count=0, cache_depth=2):
+
     if cache is None:
         cache = {}
     
     grid_tuple = tuple(map(tuple, grid))
     cache_key = (grid_tuple, depth, is_max_node)
     
-    if cache_key in cache:
-        return cache[cache_key]
     
-    if depth == 0:
-        # return evaluate_board(grid), None
-        result = evaluate_board(grid), None
-        cache[cache_key] = result
+    if depth >= cache_depth and cache_key in cache:
+        cached_result, cached_depth = cache[cache_key]
+        if cached_depth >= depth:
+            return cached_result, None
+    
+    
+    if is_game_over_static(grid):
+        
+        raw_score = evaluate_board(grid)
+        score = raw_score - (raw_score >> 2)
+        result = score, None
+        if depth >= cache_depth:
+            cache[cache_key] = (result[0], depth)
+        return result
+    
+    if depth == 0 or fours_count >= 4:
+        score = evaluate_board(grid)
+        result = score, None
+        if depth >= cache_depth:
+            cache[cache_key] = (result[0], depth)
         return result
     
     if is_max_node:
+        
         best_score = float('-inf')
         best_move = None
-            
-        for direction in ["up", "down", "left", "right"]:
-            grid_copy = copy.deepcopy(grid)
-            
-            game_temp = GAME2048()
-            game_temp.grid = grid_copy
-            
-            moved = False
-            if direction == "left":
-                moved = game_temp.move_left()
-            elif direction == "right":
-                moved = game_temp.move_right()
-            elif direction == "up":
-                moved = game_temp.move_up()
-            elif direction == "down":
-                moved = game_temp.move_down()
+        
+        for idx, direction in enumerate(["up", "down", "left", "right"]):
+            new_grid, moved = apply_move(grid, direction)
             
             if moved:
-                score, _ = expectimax(game_temp.grid, depth - 1, False)
-                    
-                if score > best_score:
+                score, _ = expectimax(new_grid, depth - 1, False, cache, depth_limit, fours_count, cache_depth)
+                
+                if score >= best_score:
                     best_score = score
-                    best_move = direction
-                        
-        # return best_score, best_move
+                    best_move = idx  
+        
         result = best_score, best_move
-        cache[cache_key] = result
+        if depth >= cache_depth:
+            cache[cache_key] = (result[0], depth)
         return result
     else:
         empty_cells = get_empty_cells(grid)
         if not empty_cells:
-            return evaluate_board(grid), None
-    
+            score = evaluate_board(grid)
+            result = score, None
+            if depth >= cache_depth:
+                cache[cache_key] = (result[0], depth)
+            return result
+        
         total_score = 0
-    
+        num_empty = len(empty_cells)
+        
         for row, col in empty_cells:
-            grid_2 = copy.deepcopy(grid)
+            grid_2 = [row[:] for row in grid]
             grid_2[row][col] = 2
-            score_2, _ = expectimax(grid_2, depth - 1, True)
-            total_score += 0.9 * score_2 / len(empty_cells)
+            score_2, _ = expectimax(grid_2, depth - 1, True, cache, depth_limit, fours_count, cache_depth)
+            total_score += 9 * score_2  
             
-            grid_4 = copy.deepcopy(grid)
+            
+            grid_4 = [row[:] for row in grid]
             grid_4[row][col] = 4
-            score_4, _ = expectimax(grid_4, depth - 1, True)
-            total_score += 0.1 * score_4 / len(empty_cells)
+            score_4, _ = expectimax(grid_4, depth - 1, True, cache, depth_limit, fours_count + 1, cache_depth)
+            total_score += 1 * score_4  
             
-        # return total_score, None
-        result = total_score, None
-        cache[cache_key] = result
-        return total_score, None
-    
+            
+        expected_score = total_score / (num_empty * 10)
+        result = expected_score, None
+        if depth >= cache_depth:
+            cache[cache_key] = (result[0], depth)
+        return result
 
-def get_ai_move(current_grid, depth=4):
-    _, best_move = expectimax(current_grid, depth, True)
-    return best_move
+def is_game_over_static(grid):
+    for row in grid:
+        if 0 in row:
+            return False
     
+    for row in range(GRID_SIZE):
+        for col in range(GRID_SIZE - 1):
+            if grid[row][col] == grid[row][col + 1]:
+                return False
+                
+    for row in range(GRID_SIZE - 1):
+        for col in range(GRID_SIZE):
+            if grid[row][col] == grid[row + 1][col]:
+                return False
+    return True
+
+def dynamic_depth_picker(grid):
+    tile_ct = GRID_SIZE * GRID_SIZE - count_empty(grid)
     
+    score = count_distinct_tiles(grid) + (0 if tile_ct <= 6 else (tile_ct - 6) >> 1)
     
+    depth = 2
+    if score >= 8: depth += 1
+    if score >= 11: depth += 1
+    if score >= 14: depth += 1
+    if score >= 15: depth += 1
+    if score >= 17: depth += 1
+    if score >= 19: depth += 1
     
+    return depth
+
+def get_ai_move(current_grid, depth=-1, heuristic_idx=2): 
+    
+    depth_to_use = depth if depth > 0 else dynamic_depth_picker(current_grid) - depth if depth < 0 else dynamic_depth_picker(current_grid)
+    
+    _, move_idx = expectimax(current_grid, depth_to_use, True, cache={}, depth_limit=depth_to_use)
+    
+    directions = ["up", "down", "left", "right"]
+    return directions[move_idx] if move_idx is not None else None
+
 class GAME2048:
     def __init__(self):
         self.grid = [[0,0,0,0],
@@ -272,8 +476,6 @@ class GAME2048:
         self.total_paused_time = 0
         self.is_timer_running = True
         
-        
-        
     def add_random_tile(self):
         empty_tiles = []
         
@@ -292,16 +494,8 @@ class GAME2048:
                 self.grid[row][col] = 4
     
     def compress_row(self, row):
-        # new_row = []
-        # for num in row:
-        #     if num != 0:
-        #         new_row.append(num)
-                
-        # while len(new_row) < len(row):
-        #     new_row.append(0)
         new_row = [num for num in row if num != 0]
         new_row.extend([0] * (len(row) - len(new_row)))
-            
         return new_row
     
     def merge_row(self, row):
@@ -314,7 +508,7 @@ class GAME2048:
                 merged.append(0)
                 continue
             
-            if i < len(row) - 1 and row[i] == row[i + 1]:
+            if i < len(row) - 1 and row[i] == row[i + 1] and row[i] != 0:
                 merged_value = row[i] * 2
                 merged.append(merged_value)
                 self.score += merged_value
@@ -322,74 +516,41 @@ class GAME2048:
             else:
                 merged.append(row[i])
                 
-        # while len(merged) < len(row):
-        #     merged.append(0)
         merged = [num for num in merged if num != 0]
         merged.extend([0] * (len(row) - len(merged)))
-            
         return merged
     
     def transpose_grid(self):
-        # transposed = []
-        # for _ in range(GRID_SIZE):
-        #     new_row = []
-            
-        #     for _ in range(GRID_SIZE):
-        #         new_row.append(0)
-            
-        #     transposed.append(new_row)
-            
-        # for i in range(GRID_SIZE):
-        #     for j in range(GRID_SIZE):
-        #         transposed[j][i] = self.grid[i][j]
-        # return transposed        
         return [[self.grid[j][i] for j in range(GRID_SIZE)] for i in range(GRID_SIZE)]  
     
-    
     def move_left(self):
-        # original_grid = []
-        # for row in self.grid:
-        #     row_copy = row[:]
-        #     original_grid.append(row_copy)
         original_grid = [row[:] for row in self.grid]
             
         for i in range(GRID_SIZE):
             compressed_row = self.compress_row(self.grid[i])
             merged_row = self.merge_row(compressed_row)
-            
             self.grid[i] = merged_row
             
         return original_grid != self.grid
     
     def move_right(self):
-        # original_grid = []
-        # for row in self.grid:
-        #     row_copy = row[:]
-        #     original_grid.append(row_copy)
         original_grid = [row[:] for row in self.grid]
             
         for i in range(GRID_SIZE):
             reversed_row = self.grid[i][::-1]
-            
             compressed_row = self.compress_row(reversed_row)
             merged_row = self.merge_row(compressed_row)
-            
             self.grid[i] = merged_row[::-1]
         
         return original_grid != self.grid
     
     def move_up(self):
-        # original_grid = []
-        # for row in self.grid:
-        #     row_copy = row[:]
-        #     original_grid.append(row_copy)
         original_grid = [row[:] for row in self.grid]
         self.grid = self.transpose_grid()
         
         for i in range(GRID_SIZE):
             compressed_row = self.compress_row(self.grid[i])
             merged_row = self.merge_row(compressed_row)
-            
             self.grid[i] = merged_row
             
         self.grid = self.transpose_grid()
@@ -398,19 +559,12 @@ class GAME2048:
     
     def move_down(self):
         original_grid = [row[:] for row in self.grid]
-        # original_grid = []
-        # for row in self.grid:
-        #     row_copy = row[:]
-        #     original_grid.append(row_copy)
-            
         self.grid = self.transpose_grid()
         
         for i in range(GRID_SIZE):
             reversed_row = self.grid[i][::-1]
-            
             compressed_row = self.compress_row(reversed_row)
             merged_row = self.merge_row(compressed_row)
-            
             self.grid[i] = merged_row[::-1]
             
         self.grid = self.transpose_grid()
@@ -476,7 +630,6 @@ class GAME2048:
         current_time = pygame.time.get_ticks()
         self.game_end_time = (current_time - self.start_time - self.total_paused_time) / 1000.0       
             
-            
     def draw(self, screen):
         screen.fill((187, 173, 160))
         pygame.draw.rect(screen, (187, 173, 160), (0, 0, WINDOW_SIZE, HEADER_HEIGHT))
@@ -510,7 +663,6 @@ class GAME2048:
                         
                     value = self.grid[row][col]
                     if value != 0:
-                        
                         color = TILE_COLORS.get(value, TILE_COLORS[2048])
                         pygame.draw.rect(screen, color, (current_x, current_y, TILE_SIZE, TILE_SIZE), 0, 5)
                     
@@ -592,7 +744,6 @@ class GAME2048:
                         final_y = final_pos[0] * TILE_SIZE + (final_pos[0] + 1) * GAP
                         self.end_position[orig_pos] = (final_x, final_y)
                         
-                        
     def update_animation(self, dt):
         if self.moving_animation:
             self.animation_progress += dt * 5
@@ -660,18 +811,16 @@ def run():
                         
         if ai_playing and not game.moving_animation and not game.game_over and ai_move_delay >= ai_move_interval:
             ai_move_delay = 0
-            # start_time = time.time()
-            ai_move = get_ai_move(game.grid, depth=4)
+            start_time = time.time()
+            ai_move = get_ai_move(game.grid, depth=-1, heuristic_idx=2)
             end_time = time.time()
-            # print(f"AI took {end_time - start_time:.3f} seconds")
-            # ai_move = get_ai_move(game.grid, depth=4)
+            print(f"AI took {end_time - start_time:.3f} seconds")
             if ai_move:
                 game.move(ai_move)
                 game.game_over = game.is_game_over()
                 if game.game_over:
                     game.record_game_end_time()
                 
-                                        
         if not game.game_over:
             game.update_animation(dt)
         
@@ -679,7 +828,7 @@ def run():
         pygame.display.flip()
         
     pygame.quit()
-    
 
 if __name__ == "__main__":
     run()
+    
