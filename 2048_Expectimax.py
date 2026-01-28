@@ -1,6 +1,7 @@
 import pygame
 import random
 import copy
+import time
 pygame.font.init()
 
 GRID_SIZE = 4
@@ -42,57 +43,149 @@ def get_empty_cells(grid):
                 empty_cells.append((i, j))
     return empty_cells
 
-def evaluate_board(grid):
-    score = 0
+# def evaluate_board(grid):
+#     score = 0
     
-    monotonicity_weight = 10
-    monotonicity_score = 0
+#     monotonicity_weight = 10
+#     monotonicity_score = 0
     
-    for row in grid:
-        for i in range(len(row) - 1):
-            if row[i] >= row[i + 1]:
-                monotonicity_score += 1
+#     for row in grid:
+#         for i in range(len(row) - 1):
+#             if row[i] >= row[i + 1]:
+#                 monotonicity_score += 1
     
-    for col in range(GRID_SIZE):
-        for row in range(GRID_SIZE - 1):
-            if grid[row][col] >= grid[row + 1][col]:
-                monotonicity_score += 1
+#     for col in range(GRID_SIZE):
+#         for row in range(GRID_SIZE - 1):
+#             if grid[row][col] >= grid[row + 1][col]:
+#                 monotonicity_score += 1
                 
-    score += monotonicity_score * monotonicity_weight
+#     score += monotonicity_score * monotonicity_weight
     
-    empty_count = len(get_empty_cells(grid))
-    score += empty_count * 100
+#     empty_count = len(get_empty_cells(grid))
+#     score += empty_count * 100
     
-    max_title = 0
-    for row in grid:
-        if max(row) > max_title:
-            max_title = max(row)
+#     max_title = 0
+#     for row in grid:
+#         if max(row) > max_title:
+#             max_title = max(row)
     
-    corner_positions = [(0,0), (0, GRID_SIZE-1), (GRID_SIZE-1, 0), (GRID_SIZE-1, GRID_SIZE-1)]
+#     corner_positions = [(0,0), (0, GRID_SIZE-1), (GRID_SIZE-1, 0), (GRID_SIZE-1, GRID_SIZE-1)]
     
-    corners = [grid[r][c] for r, c in corner_positions]
-    if max_title in corners:
-        bonus = max_title * 5
-        score += bonus
+#     corners = [grid[r][c] for r, c in corner_positions]
+#     if max_title in corners:
+#         bonus = max_title * 5
+#         score += bonus
         
-    smoothness_penalty = 0
-    for i in range(GRID_SIZE):
-        for j in range(GRID_SIZE):
-            if grid[i][j] != 0:
-                if j < GRID_SIZE - 1 and grid[i][j+1] != 0:
-                    smoothness_penalty += abs(grid[i][j] - grid[i][j+1])
-                if i < GRID_SIZE - 1 and grid[i+1][j] != 0:
-                    smoothness_penalty += abs(grid[i][j] - grid[i+1][j])
+#     smoothness_penalty = 0
+#     for i in range(GRID_SIZE):
+#         for j in range(GRID_SIZE):
+#             if grid[i][j] != 0:
+#                 if j < GRID_SIZE - 1 and grid[i][j+1] != 0:
+#                     smoothness_penalty += abs(grid[i][j] - grid[i][j+1])
+#                 if i < GRID_SIZE - 1 and grid[i+1][j] != 0:
+#                     smoothness_penalty += abs(grid[i][j] - grid[i+1][j])
     
-    score -= smoothness_penalty * 2
+#     score -= smoothness_penalty * 2
     
+#     return score
+
+def evaluate_board(grid):
+    grid_tuple = tuple(map(tuple, grid))
+    
+    def eval_monotone(grid):
+        L = R = U = D = 0
+        LR = UD = 0
+        range4 = range(4)
+        range3 = range(3)
+        
+        for x in range4:
+            m = 0
+            for y in range3:
+                if grid[x][y] and grid[x][y] >= grid[x][y+1]:
+                    m += 1
+                    L += m ** 2 * 4
+                else:
+                    L -= abs((grid[x][y] or 0) - (grid[x][y+1] or 0)) * 1.5
+                    m = 0
+                    
+            m = 0
+            for y in range3:
+                if grid[x][y] <= grid[x][y+1] and grid[x][y+1]:
+                    m += 1
+                    R += m ** 2 * 4
+                else:
+                    R -= abs((grid[x][y] or 0) - (grid[x][y+1] or 0)) * 1.5
+                    m = 0
+                    
+        LR = max(L, R)
+        
+        for y in range4:
+            m = 0
+            for x in range3:
+                if grid[x][y]  and grid[x][y] >= grid[x+1][y]:
+                    m += 1
+                    U += m ** 2 * 4
+                else:
+                    U -= abs((grid[x][y] or 0) - (grid[x+1][y] or 0)) * 1.5
+                    m = 0
+                    
+            m = 0
+            for x in range3:
+                if grid[x][y] <= grid[x+1][y] and grid[x+1][y]:
+                    m += 1
+                    D += m ** 2 * 4
+                else:
+                    D -= abs((grid[x][y] or 0) - (grid[x+1][y] or 0)) * 1.5
+                    m = 0
+                
+        UD = max(U, D)
+        return LR + UD
+
+    def eval_smoothness(grid):
+        score_smooth = 0
+        INF = 100000000
+        for x in range(4):
+            for y in range(4):
+                s = INF
+                if x > 0: s = min(s, abs((grid[x][y] or 2) - (grid[x-1][y] or 2)))
+                if y > 0: s = min(s, abs((grid[x][y] or 2) - (grid[x][y-1] or 2)))
+                if x < 3: s = min(s, abs((grid[x][y] or 2) - (grid[x+1][y] or 2)))
+                if y < 3: s = min(s, abs((grid[x][y] or 2) - (grid[x][y+1] or 2)))
+                score_smooth -= 5
+        return score_smooth
+
+    def eval_free(grid):
+        free = 0
+        for row in grid:
+            free += row.count(0)
+        return -(16-free)**2
+
+    score_monotone = eval_monotone(grid_tuple)
+    score_smooth = eval_smoothness(grid_tuple)
+    score_free = eval_free(grid_tuple)
+    
+    score = 0
+    score += score_smooth * 0.1
+    score += score_monotone * 1.0
+    score += score_free * 2.7
+
     return score
+                
+def expectimax(grid, depth, is_max_node, cache=None):
+    if cache is None:
+        cache = {}
     
+    grid_tuple = tuple(map(tuple, grid))
+    cache_key = (grid_tuple, depth, is_max_node)
     
-def expectimax(grid, depth, is_max_node):
+    if cache_key in cache:
+        return cache[cache_key]
     
     if depth == 0:
-        return evaluate_board(grid), None
+        # return evaluate_board(grid), None
+        result = evaluate_board(grid), None
+        cache[cache_key] = result
+        return result
     
     if is_max_node:
         best_score = float('-inf')
@@ -121,7 +214,10 @@ def expectimax(grid, depth, is_max_node):
                     best_score = score
                     best_move = direction
                         
-        return best_score, best_move
+        # return best_score, best_move
+        result = best_score, best_move
+        cache[cache_key] = result
+        return result
     else:
         empty_cells = get_empty_cells(grid)
         if not empty_cells:
@@ -140,6 +236,9 @@ def expectimax(grid, depth, is_max_node):
             score_4, _ = expectimax(grid_4, depth - 1, True)
             total_score += 0.1 * score_4 / len(empty_cells)
             
+        # return total_score, None
+        result = total_score, None
+        cache[cache_key] = result
         return total_score, None
     
 
@@ -193,13 +292,15 @@ class GAME2048:
                 self.grid[row][col] = 4
     
     def compress_row(self, row):
-        new_row = []
-        for num in row:
-            if num != 0:
-                new_row.append(num)
+        # new_row = []
+        # for num in row:
+        #     if num != 0:
+        #         new_row.append(num)
                 
-        while len(new_row) < len(row):
-            new_row.append(0)
+        # while len(new_row) < len(row):
+        #     new_row.append(0)
+        new_row = [num for num in row if num != 0]
+        new_row.extend([0] * (len(row) - len(new_row)))
             
         return new_row
     
@@ -210,6 +311,7 @@ class GAME2048:
         for i in range(len(row)):
             if skip_next:
                 skip_next = False
+                merged.append(0)
                 continue
             
             if i < len(row) - 1 and row[i] == row[i + 1]:
@@ -220,32 +322,36 @@ class GAME2048:
             else:
                 merged.append(row[i])
                 
-        while len(merged) < len(row):
-            merged.append(0)
+        # while len(merged) < len(row):
+        #     merged.append(0)
+        merged = [num for num in merged if num != 0]
+        merged.extend([0] * (len(row) - len(merged)))
             
         return merged
     
     def transpose_grid(self):
-        transposed = []
-        for _ in range(GRID_SIZE):
-            new_row = []
+        # transposed = []
+        # for _ in range(GRID_SIZE):
+        #     new_row = []
             
-            for _ in range(GRID_SIZE):
-                new_row.append(0)
+        #     for _ in range(GRID_SIZE):
+        #         new_row.append(0)
             
-            transposed.append(new_row)
+        #     transposed.append(new_row)
             
-        for i in range(GRID_SIZE):
-            for j in range(GRID_SIZE):
-                transposed[j][i] = self.grid[i][j]
-        return transposed          
+        # for i in range(GRID_SIZE):
+        #     for j in range(GRID_SIZE):
+        #         transposed[j][i] = self.grid[i][j]
+        # return transposed        
+        return [[self.grid[j][i] for j in range(GRID_SIZE)] for i in range(GRID_SIZE)]  
     
     
     def move_left(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
+        # original_grid = []
+        # for row in self.grid:
+        #     row_copy = row[:]
+        #     original_grid.append(row_copy)
+        original_grid = [row[:] for row in self.grid]
             
         for i in range(GRID_SIZE):
             compressed_row = self.compress_row(self.grid[i])
@@ -256,10 +362,11 @@ class GAME2048:
         return original_grid != self.grid
     
     def move_right(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
+        # original_grid = []
+        # for row in self.grid:
+        #     row_copy = row[:]
+        #     original_grid.append(row_copy)
+        original_grid = [row[:] for row in self.grid]
             
         for i in range(GRID_SIZE):
             reversed_row = self.grid[i][::-1]
@@ -272,11 +379,11 @@ class GAME2048:
         return original_grid != self.grid
     
     def move_up(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
-            
+        # original_grid = []
+        # for row in self.grid:
+        #     row_copy = row[:]
+        #     original_grid.append(row_copy)
+        original_grid = [row[:] for row in self.grid]
         self.grid = self.transpose_grid()
         
         for i in range(GRID_SIZE):
@@ -290,10 +397,11 @@ class GAME2048:
         return original_grid != self.grid
     
     def move_down(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
+        original_grid = [row[:] for row in self.grid]
+        # original_grid = []
+        # for row in self.grid:
+        #     row_copy = row[:]
+        #     original_grid.append(row_copy)
             
         self.grid = self.transpose_grid()
         
@@ -350,7 +458,7 @@ class GAME2048:
             elapsed = (current_time - self.start_time - self.total_paused_time) / 1000.0
             return max(elapsed, 0)
         else:
-            return self.paused_time
+            return self.pause_time
         
     def pause_timer(self):
         if self.is_timer_running:
@@ -527,7 +635,7 @@ def run():
     
     ai_playing = True
     ai_move_delay = 0
-    ai_move_interval = 100
+    ai_move_interval = 1
     
     while running:
         dt = clock.tick(60) / 1000.0
@@ -552,7 +660,11 @@ def run():
                         
         if ai_playing and not game.moving_animation and not game.game_over and ai_move_delay >= ai_move_interval:
             ai_move_delay = 0
+            # start_time = time.time()
             ai_move = get_ai_move(game.grid, depth=4)
+            end_time = time.time()
+            # print(f"AI took {end_time - start_time:.3f} seconds")
+            # ai_move = get_ai_move(game.grid, depth=4)
             if ai_move:
                 game.move(ai_move)
                 game.game_over = game.is_game_over()
