@@ -1,7 +1,8 @@
 import pygame
 import random
 import math
-from copy import deepcopy
+import numpy as np
+from numba import jit
 
 pygame.font.init()
 
@@ -10,11 +11,10 @@ TILE_SIZE = 100
 GAP = 10
 HEADER_HEIGHT = 80
 WINDOW_SIZE = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1)*GAP
-
 T_WIN_SIZE = WINDOW_SIZE + HEADER_HEIGHT
 
 pygame.init()
-pygame.display.set_caption("MCTS 2048")
+pygame.display.set_caption("Monte Carlo 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
 TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
@@ -22,336 +22,278 @@ TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
 
 TILE_COLORS = {
-    0: (205, 193, 180),
-    2: (238, 228, 218),
-    4: (237, 224, 200),
-    8: (242, 177, 121),
-    16: (245, 149, 99),
-    32: (246, 124, 95),
-    64: (246, 94, 59),
-    128: (237, 207, 114),
-    256: (237, 204, 97),
-   512: (237, 200, 80),
-    1024: (237, 197, 63),
-    2048: (237, 194, 46),
+    0: (205, 193, 180), 2: (238, 228, 218), 4: (237, 224, 200),
+    8: (242, 177, 121), 16: (245, 149, 99), 32: (246, 124, 95),
+    64: (246, 94, 59), 128: (237, 207, 114), 256: (237, 204, 97),
+    512: (237, 200, 80), 1024: (237, 197, 63), 2048: (237, 194, 46),
 }
 
-class MCTSNode:
-    def __init__(self, state, parent=None, action=None):
-        self.state = state
-        self.parent = parent
-        self.action = action
-        self.children = []
-        self.visits = 0
-        self.value = 0.0
-        self.untried_actions = ["up", "dowm", "left", "right"]    
-        
-    def is_fully_expanded(self):
-        return len(self.untried_actions) == 0
-    
-    def best_child(self, exploration_weight=math.sqrt(2)):
-        choices_weights = [
-            (child.value / child.visits) + 
-            exploration_weight * math.sqrt(math.log(self.visits) / child.visits)
-            for child in self.children
-        ]
-        return self.children[choices_weights.index(max(choices_weights))]
-    
-    def expand(self):
-        action = self.untried_actions.pop(random.randint(0, len(self.untried_actions)-1))
 
-        temp_game = GAME2048()
-        temp_game.grid = [row[:] for row in [self.state[i:i+4] for i in range(0, 16, 4)]]
-        
-        original_grid = [row[:] for row in temp_game.grid]
-        moved = temp_game.move(action)
-        
-        if moved or original_grid != temp_game.grid:
-            new_State = temp_game.get_state()
-            child_node = MCTSNode(state=new_State, parent=self, action=action)
-            self.children.append(child_node)
-            return child_node
-        else:
-            if len(self.untried_actions) > 0:
-                return self.expand()
-            return None
-        
-def state_is_terminal(game_instance):
-    return game_instance.is_game_over()
+@jit(nopython=True)
+def slide_and_merge_left(board):
+    new_board = board.copy()
+    score_delta = 0
     
-def calculate_reward(game_instance):
-    empty_tiles = sum(1 for row in game_instance.grid for cell in row if cell == 0)
-    max_tile = max(max(row) for row in game_instance.grid)
-    score = game_instance.score
+    for row in range(4):
+        pos = 0
+        for col in range(4):
+            if new_board[row, col] != 0:
+                new_board[row, pos] = new_board[row, col]
+                if pos != col:
+                    new_board[row, col] = 0
+                pos += 1
         
-    reward = score + (empty_tiles * 100) + (max_tile * 10)
         
-    if game_instance.is_game_over():
-        reward -= 1000
-            
-    return reward
-    
-def mcts_search(game_instance, iterations=100):
-    root = MCTSNode(state=game_instance.get_state())
-        
-    for _ in range(iterations):
-        node = root
-        temp_game = GAME2048()
-            
-        while not state_is_terminal(temp_game) and node.is_fully_expanded():
-            node = node.best_child()
-            temp_game.grid = [row[:] for row in [node.state[i:i+4] for i in range(0, 16, 4)]]
+        for col in range(3):
+            if new_board[row, col] != 0 and new_board[row, col] == new_board[row, col + 1]:
+                new_board[row, col] *= 2
+                score_delta += new_board[row, col]
+                new_board[row, col + 1] = 0
                 
-        if not state_is_terminal(temp_game) and len(node.untried_actions) > 0:
-            child = node.expand()
-            if child is not None:
-                node = child
-                temp_game.grid = [row[:] for row in [node.state[i:i+4] for i in range(0, 16, 4)]]
-                    
-                    
-        rollout_game = GAME2048()
-        rollout_game.grid = [row[:] for row in [node.state[i:i+4] for i in range(0, 16, 4)]]
-            
-        simulation_steps = 0
-        max_simulation_steps = 20
-        while not state_is_terminal(rollout_game) and simulation_steps < max_simulation_steps:
-            possible_moves = ["up", "down", "left", "right"] 
+                for k in range(col + 1, 3):
+                    new_board[row, k] = new_board[row, k + 1]
+                new_board[row, 3] = 0
+    
+    return new_board, score_delta
+
+@jit(nopython=True)
+def make_move_with_score(board, direction):
+    """Ultra-fast move function that returns both new board and score delta"""
+    score_delta = 0
+    
+    if direction == 0:  # Up
+        rotated = np.rot90(board, k=1)
+        moved, score_delta = slide_and_merge_left(rotated)
+        return np.rot90(moved, k=-1), score_delta
+    elif direction == 1:  # Right
+        flipped = np.fliplr(board)
+        moved, score_delta = slide_and_merge_left(flipped)
+        return np.fliplr(moved), score_delta
+    elif direction == 2:  # Down
+        rotated = np.rot90(board, k=-1)
+        moved, score_delta = slide_and_merge_left(rotated)
+        return np.rot90(moved, k=1), score_delta
+    else:  # Left (direction == 3)
+        moved, score_delta = slide_and_merge_left(board)
+        return moved, score_delta
+
+@jit(nopython=True)
+def make_move_numba(board, direction):
+    """Ultra-fast move function using numba"""
+    new_board, _ = make_move_with_score(board, direction)
+    return new_board
+
+@jit(nopython=True)
+def is_game_over_numba(board):
+    for r in range(4):
+        for c in range(4):
+            if board[r, c] == 0:
+                return False
+    
+    for r in range(4):
+        for c in range(3):
+            if board[r, c] == board[r, c + 1]:
+                return False
+    
+    for r in range(3):
+        for c in range(4):
+            if board[r, c] == board[r + 1, c]:
+                return False
+    
+    return True
+
+@jit(nopython=True)
+def boards_equal(board1, board2):
+    """Fast board equality check"""
+    for r in range(4):
+        for c in range(4):
+            if board1[r, c] != board2[r, c]:
+                return False
+    return True
+
+@jit(nopython=True)
+def count_empty_tiles(board):
+    """Count empty tiles in board"""
+    count = 0
+    for r in range(4):
+        for c in range(4):
+            if board[r, c] == 0:
+                count += 1
+    return count
+
+@jit(nopython=True)
+def add_random_tile_numba(board, tile_value, random_pos):
+    """Add tile at specific random position (position pre-selected)"""
+    new_board = board.copy()
+    empty_count = 0
+    
+    for r in range(4):
+        for c in range(4):
+            if new_board[r, c] == 0:
+                if empty_count == random_pos:
+                    new_board[r, c] = tile_value
+                    return new_board
+                empty_count += 1
+    
+    return new_board
+
+
+class MonteCarloPlayer:
+    """Monte Carlo simulation player based on the C++ implementation"""
+    
+    def __init__(self, runs_per_move=50, max_simulation_steps=50):
+        self.runs_per_move = runs_per_move
+        self.max_simulation_steps = max_simulation_steps
+        self.direction_names = ["up", "right", "down", "left"]
+    
+    def simulate_one_run(self, board):
+        """From a given game state, choose random moves until the game is completed."""
+        board_copy = np.copy(board)
+        first_move = -1
+        score = 0
+        steps = 0
+        
+        while not is_game_over_numba(board_copy) and steps < self.max_simulation_steps:
+            possible_moves = [0, 1, 2, 3]
             random.shuffle(possible_moves)
-            move_made = False
+            
+            move_found = False
+            for move_dir in possible_moves:
+                new_board, move_score = make_move_with_score(board_copy, move_dir)
                 
-            for action in possible_moves:
-                original_grid = [row[:] for row in rollout_game.grid]  
-                moved = rollout_game.move(action)
-                if moved or original_grid != rollout_game.grid:
-                    move_made = True
-                    break
+                if not boards_equal(board_copy, new_board):
+                    board_copy = new_board
+                    score += move_score
                     
-            if not move_made:
+                    if first_move == -1:
+                        first_move = move_dir
+                    
+                    empty_count = count_empty_tiles(board_copy)
+                    if empty_count > 0:
+                        random_pos = random.randint(0, empty_count - 1)
+                        tile_value = 2 if random.random() < 0.9 else 4
+                        board_copy = add_random_tile_numba(board_copy, tile_value, random_pos)
+                    
+                    move_found = True
+                    break
+            
+            if not move_found:
                 break
-            simulation_steps += 1
                 
-                
-        reward = calculate_reward(rollout_game)
-        current_node = node
-        while current_node is not None:
-            current_node.visits += 1
-            current_node.value += reward
-            current_node = current_node.parent
-                
-    if root.children:
-        best_child = max(root.children, key=lambda c: c.visits) 
-        return best_child.action
-    else:
-        possible_moves = ["up", "down", "left", "right"]
-        random.shuffle(possible_moves)
-        for action in possible_moves:
-            temp_game = deepcopy(game_instance)
-            original_grid = [row[:] for row in temp_game.grid]
-            if temp_game.move(action) or original_grid != temp_game.grid:
-                return action
-        return "up"
+            steps += 1
         
+        if first_move == -1:
+            first_move = 0  # Default to UP
+        
+        return first_move, score
     
+    def pick_move(self, board_list):
+        """Use Monte Carlo simulation to pick the best move."""
+        board = np.array(board_list, dtype=np.int32)
+        
+        scores = [0, 0, 0, 0]
+        counter = [0, 0, 0, 0]
+        
+        # Run simulations for each move
+        for i in range(self.runs_per_move):
+            first_move, final_score = self.simulate_one_run(board)
+            scores[first_move] += final_score
+            counter[first_move] += 1
+        
+        best_avg_score = float('-inf')
+        best_move = 0
+        
+        for i in range(4):
+            if counter[i] > 0:
+                avg_score = scores[i] / counter[i]
+                if avg_score > best_avg_score:
+                    best_avg_score = avg_score
+                    best_move = i
+        
+        return self.direction_names[best_move]
+
+def monte_carlo_search(game_instance, runs_per_move=50):
+    """Wrapper function for Monte Carlo player"""
+    mc_player = MonteCarloPlayer(runs_per_move=runs_per_move)
+    return mc_player.pick_move(game_instance.grid)
+
+
 class GAME2048:
     def __init__(self):
-        self.grid = [[0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0]]
-        
+        self.grid = [[0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0]]
         self.score = 0
         self.moves = 0
         self.font = TILE_FONT
         self.timer_font = TIMER_FONT
         self.game_over = False
-        self.moving_animation = False
-        self.animation_progress = 0
-        self.animation_direction = None
-        self.start_position = {}
-        self.end_position = {}
         self.start_time = pygame.time.get_ticks()
         self.game_end_time = 0
+        self.max_tile_achieved = 0
+    
+    def update_max_tile(self):
+        """Track the maximum tile achieved"""
+        current_max = max(max(row) for row in self.grid)
+        if current_max > self.max_tile_achieved:
+            self.max_tile_achieved = current_max
+            
+            max_pos = None
+            for r in range(4):
+                for c in range(4):
+                    if self.grid[r][c] == current_max:
+                        max_pos = (r, c)
+                        break
+                if max_pos:
+                    break
+            
+            empty = sum(1 for row in self.grid for cell in row if cell == 0)
+            
+            corner_status = "✓ CORNER" if max_pos in [(0,0), (0,3), (3,0), (3,3)] else "⚠ NOT IN CORNER"
+            
+            if current_max >= 128:
+                print(f"🎯 New max: {current_max} at {max_pos} [{corner_status}] | Empty: {empty} | Score: {self.score} | Moves: {self.moves}")
+            
+            if current_max >= 2048:
+                print(f"🎉🎉🎉 ACHIEVED {current_max} TILE! 🎉🎉🎉")
         
+        return current_max
         
-    def get_state(self):
-        return [cell for row in self.grid for cell in row]
-
     def add_random_tile(self):
-        empty_tiles = []
-        
-        for row_idx in range(len(self.grid)):
-            for col_idx in range(len(self.grid[row_idx])):
-                if self.grid[row_idx][col_idx] == 0:
-                    empty_tiles.append((row_idx, col_idx))
-                    
+        empty_tiles = [(r, c) for r in range(4) for c in range(4) if self.grid[r][c] == 0]
         if empty_tiles:
-            rand_position = random.choice(empty_tiles)
-            row, col = rand_position
-            
-            if random.random() < 0.9:
-                self.grid[row][col] = 2
-            else:
-                self.grid[row][col] = 4
+            row, col = random.choice(empty_tiles)
+            self.grid[row][col] = 2 if random.random() < 0.9 else 4
     
-    def compress_row(self, row):
-        new_row = []
-        for num in row:
-            if num != 0:
-                new_row.append(num)
-                
-        while len(new_row) < len(row):
-            new_row.append(0)
-            
-        return new_row
-    
-    def merge_row(self, row):
-        merged = []
-        skip_next = False
-        
-        for i in range(len(row)):
-            if skip_next:
-                skip_next = False
-                continue
-            
-            if i < len(row) - 1 and row[i] == row[i + 1]:
-                merged_value = row[i] * 2
-                merged.append(merged_value)
-                self.score += merged_value
-                skip_next = True
-            else:
-                merged.append(row[i])
-                
-        while len(merged) < len(row):
-            merged.append(0)
-            
-        return merged
-    
-    def transpose_grid(self):
-        transposed = []
-        for _ in range(GRID_SIZE):
-            new_row = []
-            
-            for _ in range(GRID_SIZE):
-                new_row.append(0)
-            
-            transposed.append(new_row)
-            
-        for i in range(GRID_SIZE):
-            for j in range(GRID_SIZE):
-                transposed[j][i] = self.grid[i][j]
-        return transposed          
-    
-    
-    def move_left(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
-            
-        for i in range(GRID_SIZE):
-            compressed_row = self.compress_row(self.grid[i])
-            merged_row = self.merge_row(compressed_row)
-            
-            self.grid[i] = merged_row
-            
-        return original_grid != self.grid
-    
-    def move_right(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
-            
-        for i in range(GRID_SIZE):
-            reversed_row = self.grid[i][::-1]
-            
-            compressed_row = self.compress_row(reversed_row)
-            merged_row = self.merge_row(compressed_row)
-            
-            self.grid[i] = merged_row[::-1]
-        
-        return original_grid != self.grid
-    
-    def move_up(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
-            
-        self.grid = self.transpose_grid()
-        
-        for i in range(GRID_SIZE):
-            compressed_row = self.compress_row(self.grid[i])
-            merged_row = self.merge_row(compressed_row)
-            
-            self.grid[i] = merged_row
-            
-        self.grid = self.transpose_grid()
-        
-        return original_grid != self.grid
-    
-    def move_down(self):
-        original_grid = []
-        for row in self.grid:
-            row_copy = row[:]
-            original_grid.append(row_copy)
-            
-        self.grid = self.transpose_grid()
-        
-        for i in range(GRID_SIZE):
-            reversed_row = self.grid[i][::-1]
-            
-            compressed_row = self.compress_row(reversed_row)
-            merged_row = self.merge_row(compressed_row)
-            
-            self.grid[i] = merged_row[::-1]
-            
-        self.grid = self.transpose_grid()
-        
-        return original_grid != self.grid
-      
     def move(self, direction):
-        moved = False
-        if direction == "left":
-            moved = self.move_left()
-        elif direction == "right":
-            moved = self.move_right()
-        elif direction == "up":
-            moved = self.move_up()
-        elif direction == "down":
-            moved = self.move_down()
-            
-        if moved:
-            self.add_random_tile()
-            self.moves += 1
+        """Optimized move using numpy backend"""
+        board = np.array(self.grid, dtype=np.int32)
+        direction_map = {"up": 0, "right": 1, "down": 2, "left": 3}
+        dir_index = direction_map[direction]
         
-        return moved
+        new_board, score_delta = make_move_with_score(board, dir_index)
+        
+        if boards_equal(board, new_board):
+            return False
+        
+        self.score += score_delta
+        
+        self.grid = new_board.tolist()
+        self.add_random_tile()
+        self.moves += 1
+        self.update_max_tile()
+        
+        return True
     
     def is_game_over(self):
-        for row in self.grid:
-            if 0 in row:
-                return False
-        
-        for row in range(GRID_SIZE):
-            for col in range(GRID_SIZE - 1):
-                if self.grid[row][col] == self.grid[row][col + 1]:
-                    return False
-                
-        for row in range(GRID_SIZE - 1):
-            for col in range(GRID_SIZE):
-                if self.grid[row][col] == self.grid[row + 1][col]:
-                    return False
-        return True
+        board = np.array(self.grid, dtype=np.int32)
+        return is_game_over_numba(board)
     
     def get_elapsed_time(self):
         if self.game_over:
             return self.game_end_time
-        else:
-            return (pygame.time.get_ticks() - self.start_time) / 1000.0
+        return (pygame.time.get_ticks() - self.start_time) / 1000.0
         
     def record_game_end_time(self):
         self.game_end_time = (pygame.time.get_ticks() - self.start_time) / 1000.0
-            
             
     def draw(self, screen):
         screen.fill((187, 173, 160))
@@ -359,58 +301,27 @@ class GAME2048:
         
         score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
         moves_text = self.font.render(f"Moves: {self.moves}", True, (255, 255, 255))
-        
-        elasped_time = self.get_elapsed_time()
-        time_text = self.timer_font.render(f"Time: {elasped_time:.1f}s", True, (255, 255, 255))
+        elapsed_time = self.get_elapsed_time()
+        time_text = self.timer_font.render(f"Time: {elapsed_time:.1f}s", True, (255, 255, 255))
         
         screen.blit(score_text, (20, 20))
         screen.blit(time_text, (20, 55))
-        
         moves_rect = moves_text.get_rect(topright=(WINDOW_SIZE - 20, 20))
         screen.blit(moves_text, moves_rect)
         
-        if self.moving_animation and self.animation_direction:
-            for row in range(GRID_SIZE):
-                for col in range(GRID_SIZE):
-                    base_x = col * TILE_SIZE + (col + 1) * GAP
-                    base_y = row * TILE_SIZE + (row + 1) * GAP + HEADER_HEIGHT
-                    
-                    if (row, col) in self.end_position:
-                        start_pos = self.start_position.get((row, col), (base_x, base_y))
-                        end_pos = self.end_position[(row, col)]
-                        
-                        current_x = start_pos[0] + (end_pos[0] - start_pos[0]) * self.animation_progress
-                        current_y = start_pos[1] + (end_pos[1] - start_pos[1]) * self.animation_progress
-                    else:
-                        current_x, current_y = base_x, base_y    
-                        
-                    value = self.grid[row][col]
-                    if value != 0:
-                        
-                        color = TILE_COLORS.get(value, TILE_COLORS[2048])
-                        pygame.draw.rect(screen, color, (current_x, current_y, TILE_SIZE, TILE_SIZE), 0, 5)
-                    
-                        text_color = (119, 110, 101) if value <= 4 else (249, 246, 242)
-                        text_surface = self.font.render(str(value), True, text_color)
-                        
-                        text_rect = text_surface.get_rect(center=(current_x + TILE_SIZE//2, current_y + TILE_SIZE//2))
-                        screen.blit(text_surface, text_rect)
-        else:
-            for row in range(GRID_SIZE):
-                for col in range(GRID_SIZE):
-                    x = col * TILE_SIZE + (col + 1) * GAP
-                    y = row * TILE_SIZE + (row + 1) * GAP + HEADER_HEIGHT
-                    
-                    value = self.grid[row][col]
-                    color = TILE_COLORS.get(value, TILE_COLORS[2048])
-                    
-                    pygame.draw.rect(screen, color, (x, y, TILE_SIZE, TILE_SIZE), 0, 5)
-                    
-                    if value != 0:
-                        text_color = (119, 110, 101) if value <= 4 else (249, 246, 242)
-                        text_surface = self.font.render(str(value), True, text_color)
-                        text_rect = text_surface.get_rect(center=(x + TILE_SIZE//2, y + TILE_SIZE//2))
-                        screen.blit(text_surface, text_rect) 
+        for row in range(4):
+            for col in range(4):
+                x = col * TILE_SIZE + (col + 1) * GAP
+                y = row * TILE_SIZE + (row + 1) * GAP + HEADER_HEIGHT
+                value = self.grid[row][col]
+                color = TILE_COLORS.get(value, TILE_COLORS[2048])
+                pygame.draw.rect(screen, color, (x, y, TILE_SIZE, TILE_SIZE), 0, 5)
+                
+                if value != 0:
+                    text_color = (119, 110, 101) if value <= 4 else (249, 246, 242)
+                    text_surface = self.font.render(str(value), True, text_color)
+                    text_rect = text_surface.get_rect(center=(x + TILE_SIZE//2, y + TILE_SIZE//2))
+                    screen.blit(text_surface, text_rect)
                         
         if self.game_over:
             overlay = pygame.Surface((WINDOW_SIZE, T_WIN_SIZE))
@@ -419,86 +330,32 @@ class GAME2048:
             screen.blit(overlay, (0, 0))
             
             game_over_text = OVER_FONT.render("GAME OVER", True, (255, 255, 255))
-            text_rect = game_over_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2))
+            text_rect = game_over_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 - 40))
             screen.blit(game_over_text, text_rect)
             
-            restart_text = self.font.render("Press R to Restart", True, (255, 255, 255))
-            restart_rect = restart_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 50))
+            max_tile_text = self.font.render(f"Max Tile: {self.max_tile_achieved}", True, (255, 255, 255))
+            max_rect = max_tile_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 10))
+            screen.blit(max_tile_text, max_rect)
+            
+            final_score = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
+            score_rect = final_score.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 50))
+            screen.blit(final_score, score_rect)
+            
+            restart_text = TIMER_FONT.render("Press R to Restart", True, (255, 255, 255))
+            restart_rect = restart_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 90))
             screen.blit(restart_text, restart_rect)
                     
-    def animate_move(self, direction):
-        self.moving_animation = True
-        self.animation_progress = 0
-        self.animation_direction = direction
-        self.start_position = {}
-        self.end_position = {}
-        
-        for row in range(GRID_SIZE):
-            for col in range(GRID_SIZE):
-                if self.grid[row][col] != 0:
-                    base_x = col * TILE_SIZE + (col + 1) * GAP
-                    base_y = row * TILE_SIZE + (row + 1) * GAP
-                    self.start_position[(row, col)] = (base_x, base_y)
-        
-        temp_grid = []
-        for row in self.grid:
-            temp_grid.append(row[:])
-            
-        if direction == "left":
-            for i in range(GRID_SIZE):
-                row = temp_grid[i]
-                compressed_row = self.compress_row(row)
-                merged_row = self.merge_row(compressed_row)
-                temp_grid[i] = merged_row
-                
-                original_non_zero = []
-                for j, val in enumerate(row):
-                    if val != 0:
-                        original_non_zero.append((i, j))
-                        
-                final_non_zero = []
-                for j, val in enumerate(temp_grid[i]):
-                    if val != 0:
-                        final_non_zero.append((i, j))
-                        
-                for idx, (final_pos) in enumerate(final_non_zero):
-                    if idx < len(original_non_zero):
-                        orig_pos = original_non_zero[idx]
-                        final_x = final_pos[1] * TILE_SIZE + (final_pos[1] + 1) * GAP
-                        final_y = final_pos[0] * TILE_SIZE + (final_pos[0] + 1) * GAP
-                        self.end_position[orig_pos] = (final_x, final_y)
-                        
-                        
-    def update_animation(self, dt):
-        if self.moving_animation:
-            self.animation_progress += dt * 5
-            if self.animation_progress >= 1.0:
-                self.animation_progress = 1.0
-                
-                if self.animation_direction == "left":
-                    self.move_left()
-                elif self.animation_direction == "right":
-                    self.move_right()
-                elif self.animation_direction == "up":
-                    self.move_up()
-                elif self.animation_direction == "down":
-                    self.move_down()
-                    
-                self.moving_animation = False
-                self.add_random_tile()
-    
     def reset_game(self):
-        self.grid = [[0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0],
-                     [0,0,0,0]]
+        self.grid = [[0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0]]
         self.score = 0
         self.moves = 0
         self.game_over = False
+        self.max_tile_achieved = 0
         self.start_time = pygame.time.get_ticks()
         self.add_random_tile()
-        self.add_random_tile()                   
-        
+        self.add_random_tile()
+        print("\n🎮 New game started!")
+
 def run():
     game = GAME2048()
     game.add_random_tile()
@@ -508,9 +365,15 @@ def run():
     running = True
     
     ai_mode = True
-    ai_thinking = False
-    ai_delay = 0.2
+    ai_delay = 0.2  # Slower for more reliable Monte Carlo results
     last_ai_move_time = 0
+    
+    print("Warming up JIT compilation...")
+    dummy_board = np.array([[2, 4, 8, 16], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32)
+    for i in range(4):
+        make_move_numba(dummy_board, i)
+    print("Ready! Press SPACE to toggle AI mode")
+    print("AI will use Monte Carlo simulation to choose moves!")
     
     while running:
         dt = clock.tick(60) / 1000.0
@@ -525,44 +388,37 @@ def run():
                 elif event.key == pygame.K_SPACE:
                     ai_mode = not ai_mode
                     print(f"AI Mode: {'ON' if ai_mode else 'OFF'}")
-                else:
-                    if not game.moving_animation and not ai_mode:
-                        moved = False
-                        if event.key == pygame.K_LEFT:
-                            moved = game.move("left")
-                        elif event.key == pygame.K_RIGHT:
-                            moved = game.move("right")
-                        elif event.key == pygame.K_UP:
-                            moved = game.move("up")
-                        elif event.key == pygame.K_DOWN:
-                            moved = game.move("down")
-                            
-                        if moved:
-                            game.game_over = game.is_game_over()
-                            if game.game_over:
-                                game.record_game_end_time()
-                                
-        if ai_mode and not game.game_over and not game.moving_animation:
+                elif not ai_mode:
+                    # Manual controls
+                    if event.key == pygame.K_UP:
+                        game.move("up")
+                    elif event.key == pygame.K_DOWN:
+                        game.move("down")
+                    elif event.key == pygame.K_LEFT:
+                        game.move("left")
+                    elif event.key == pygame.K_RIGHT:
+                        game.move("right")
+        
+        if ai_mode and not game.game_over:
             current_time = pygame.time.get_ticks() / 1000.0
             if current_time - last_ai_move_time >= ai_delay:
-                best_action = mcts_search(game, iterations=100)
+                best_action = monte_carlo_search(game, runs_per_move=25)
                 moved = game.move(best_action)
                 
                 if moved:
                     game.game_over = game.is_game_over()
                     if game.game_over:
                         game.record_game_end_time()
+                        print(f"\n❌ Game Over! Max Tile: {game.max_tile_achieved}, Score: {game.score}, Moves: {game.moves}, Time: {game.game_end_time:.1f}s")
+                        if game.max_tile_achieved >= 2048:
+                            print("🏆 SUCCESS! Reached 2048 or higher!")
                         
                 last_ai_move_time = current_time
                 
-        # if not game.game_over:
-        #     game.update_animation(dt)
-        
         game.draw(screen)
         pygame.display.flip()
         
     pygame.quit()
-    
 
 if __name__ == "__main__":
     run()
