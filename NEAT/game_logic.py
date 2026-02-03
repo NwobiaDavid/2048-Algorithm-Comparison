@@ -108,3 +108,21 @@ class Game2048Logic:
 
     def get_max_tile(self):
         return max(max(row) for row in self.grid)
+    
+    def calc_smoothness(game):
+        board = game.grid  # Use game.grid instead of game.board
+        smoothness = 0
+        
+        # Check horizontally
+        for row in board:
+            for j in range(len(row)-1):
+                if row[j] != 0 and row[j+1] != 0:
+                    smoothness -= abs(math.log2(row[j]) - math.log2(row[j+1]))
+        
+        # Check vertically  
+        for col in range(len(board[0])):
+            for row in range(len(board)-1):
+                if board[row][col] != 0 and board[row+1][col] != 0:
+                    smoothness -= abs(math.log2(board[row][col]) - math.log2(board[row+1][col]))
+        
+        return smoothness

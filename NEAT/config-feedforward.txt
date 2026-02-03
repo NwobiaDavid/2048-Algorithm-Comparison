@@ -1,19 +1,19 @@
 [NEAT]
 fitness_criterion     = max
-fitness_threshold     = 100000
-pop_size              = 150
+fitness_threshold     = 1000000
+pop_size              = 300
 reset_on_extinction   = False
-no_fitness_termination = False
+no_fitness_termination = True
 
 [DefaultGenome]
 
 # Initial connection strategy
-initial_connection         = unconnected
+initial_connection      = full
 
 # Node activation options
 activation_default      = tanh
-activation_mutate_rate  = 0.0
-activation_options      = tanh
+activation_mutate_rate  = 0.1
+activation_options      = tanh relu sigmoid
 
 # Node aggregation options
 aggregation_default     = sum
@@ -26,9 +26,9 @@ bias_init_mean          = 1.0
 bias_init_stdev         = 0.0
 bias_max_value          = 30.0
 bias_min_value          = -30.0
-bias_mutate_power       = 0.0
-bias_mutate_rate        = 0.0
-bias_replace_rate       = 0.0
+bias_mutate_power       = 0.5
+bias_mutate_rate        = 0.7
+bias_replace_rate       = 0.1
 
 
 # Genome compatibility options
@@ -37,11 +37,12 @@ compatibility_weight_coefficient   = 0.5
 
 # Connection add/remove rates
 conn_add_prob           = 0.5
-conn_delete_prob        = 0.5
+conn_delete_prob        = 0.3
 
 # connection enable options
 enabled_default         = True
 enabled_mutate_rate     = 0.01
+
 
 # connection enable mutation options
 enabled_rate_to_true_add  = 0.0
@@ -50,16 +51,16 @@ enabled_rate_to_true_mut  = 0.0
 enabled_rate_to_false_mut = 0.0
 
 # Node add/remove rates
-node_add_prob           = 0.2
+node_add_prob           = 0.3
 node_delete_prob        = 0.2
 
 # Network parameters
-num_hidden              = 5
-num_inputs              = 16
+num_hidden              = 0
+num_inputs              = 24
 num_outputs             = 4
 
 # Network type
-feed_forward            = True
+feed_forward            = False
 
 # node response options
 response_init_type      = gaussian
@@ -92,9 +93,9 @@ compatibility_threshold = 3.0
 [DefaultStagnation]
 species_fitness_func = max
 max_stagnation       = 20
-species_elitism      = 2
+species_elitism      = 4
 
 [DefaultReproduction]
-elitism            = 2
-survival_threshold = 0.1
+elitism            = 8
+survival_threshold = 0.2
 min_species_size   = 1
