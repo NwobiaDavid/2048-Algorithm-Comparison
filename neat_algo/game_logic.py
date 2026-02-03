@@ -1,4 +1,5 @@
 import random
+import math
 
 GRID_SIZE = 4
 

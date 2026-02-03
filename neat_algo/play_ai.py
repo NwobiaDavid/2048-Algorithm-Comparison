@@ -11,7 +11,7 @@ pickle_path = os.path.join(local_dir, 'winner.pkl')
                            
 sys.path.append(parent_dir)
 
-from Main_2048 import GAME2048
+from main_2048 import GAME2048
 from expectimax_search import ExpectimaxSearch
 
 GRID_SIZE = 4
@@ -36,7 +36,7 @@ with open(pickle_path, 'rb') as f:
 net = neat.nn.FeedForwardNetwork.create(winner, config)
 
 # Initialize expectimax searcher
-USE_SEARCH = False 
+USE_SEARCH = True 
 SEARCH_DEPTH = 4  
 searcher = ExpectimaxSearch(max_depth=SEARCH_DEPTH) if USE_SEARCH else None
 
@@ -48,7 +48,7 @@ class GameAdapter:
             self.grid = game2048_instance.grid
             self.score = game2048_instance.score
         else:
-            from Main_2048 import GAME2048
+            from main_2048 import GAME2048
             self.game = GAME2048()
             self.grid = [row[:] for row in grid] if grid else [[0]*4 for _ in range(4)]
             self.score = score if score is not None else 0

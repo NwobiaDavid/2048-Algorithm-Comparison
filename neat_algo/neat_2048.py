@@ -1,9 +1,9 @@
 import neat
 import pickle
 import math
-from game_logic import Game2048Logic
 from math import log2
-from expectimax_search import ExpectimaxSearch
+from .expectimax_search import ExpectimaxSearch
+from .game_logic import Game2048Logic
 
 def normalize(arr):
     """Normalize the array using log2 scaling"""

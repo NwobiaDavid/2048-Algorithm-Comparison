@@ -2,7 +2,7 @@ import os
 import pickle
 import neat
 from neat import Checkpointer
-from Neat_2048 import eval_genomes, eval_genome
+from neat_2048 import eval_genomes, eval_genome
 
 
 def run_neat():
