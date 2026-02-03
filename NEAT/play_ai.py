@@ -1,4 +1,3 @@
-# play_ai.py
 import sys
 import os
 import pygame
@@ -13,17 +12,15 @@ pickle_path = os.path.join(local_dir, 'winner.pkl')
 sys.path.append(parent_dir)
 
 from Main_2048 import GAME2048
+from expectimax_search import ExpectimaxSearch
 
 GRID_SIZE = 4
 TILE_SIZE = 100
 GAP = 10
 HEADER_HEIGHT = 80
 WINDOW_SIZE = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1)*GAP
-
 T_WIN_SIZE = WINDOW_SIZE + HEADER_HEIGHT
 
-
-# config_path = "config-feedforward.txt"
 config_path = os.path.join(local_dir, 'config-feedforward.txt')
 config = neat.Config(
     neat.DefaultGenome,
@@ -38,89 +35,154 @@ with open(pickle_path, 'rb') as f:
     print("Winner fitness:", winner.fitness)
 net = neat.nn.FeedForwardNetwork.create(winner, config)
 
-def get_24_inputs(state):
-    # First 16: normalized grid values
-    normalized_grid = [0.0 if x == 0 else math.log2(x) / 11.0 for x in state]
-    
-    # Next 8: additional features (example implementations)
-    additional_features = []
-    
-    # Example: max tile positions (row, col) normalized
-    max_val = max(state)
-    max_idx = state.index(max_val) if max_val > 0 else 0
-    max_row, max_col = max_idx // 4, max_idx % 4
-    additional_features.extend([max_row/3.0, max_col/3.0])  # 2 features
-    
-    # Example: empty cell count (normalized)
-    empty_count = state.count(0)
-    additional_features.append(empty_count / 16.0)  # 1 feature
-    
-    # Example: monotonicity features (row/column trends)
-    grid_2d = [state[i:i+4] for i in range(0, 16, 4)]
-    monotonicity_score = calculate_monotonicity(grid_2d)
-    additional_features.extend([monotonicity_score, 1-monotonicity_score])  # 2 features
-    
-    # Example: clustering penalty (adjacent similar tiles)
-    clustering_penalty = calculate_clustering_penalty(grid_2d)
-    additional_features.append(clustering_penalty)  # 1 feature
-    
-    # Pad with zeros to reach 24 total features
-    remaining_features = 24 - len(normalized_grid) - len(additional_features)
-    additional_features.extend([0.0] * remaining_features)
-    
-    return normalized_grid + additional_features
+# Initialize expectimax searcher
+USE_SEARCH = False 
+SEARCH_DEPTH = 4  
+searcher = ExpectimaxSearch(max_depth=SEARCH_DEPTH) if USE_SEARCH else None
 
-def calculate_monotonicity(grid):
-    # Calculate how monotonic the rows/columns are
-    score = 0
-    # Horizontal monotonicity
-    for row in grid:
-        for i in range(len(row)-1):
-            if row[i] >= row[i+1]:
-                score += 1
-    # Vertical monotonicity  
-    for c in range(4):
-        for r in range(3):
-            if grid[r][c] >= grid[r+1][c]:
-                score += 1
-    return min(score / 24.0, 1.0)  # Normalize
 
-def calculate_clustering_penalty(grid):
-    penalty = 0
-    for r in range(4):
-        for c in range(4):
-            if grid[r][c] != 0:
-                # Check adjacent cells
-                for dr, dc in [(0,1), (1,0), (0,-1), (-1,0)]:
-                    nr, nc = r+dr, c+dc
-                    if 0 <= nr < 4 and 0 <= nc < 4 and grid[nr][nc] != 0:
-                        penalty += abs(grid[r][c] - grid[nr][nc])
-    return min(penalty / 100.0, 1.0)  # Normalize
+class GameAdapter:
+    def __init__(self, game2048_instance=None, grid=None, score=None):
+        if game2048_instance is not None:
+            self.game = game2048_instance
+            self.grid = game2048_instance.grid
+            self.score = game2048_instance.score
+        else:
+            from Main_2048 import GAME2048
+            self.game = GAME2048()
+            self.grid = [row[:] for row in grid] if grid else [[0]*4 for _ in range(4)]
+            self.score = score if score is not None else 0
+            self.game.grid = self.grid
+            self.game.score = self.score
+    
+    def move(self, direction):
+        """Convert direction index to string and call game.move"""
+        direction_map = ["left", "right", "up", "down"]
+        result = self.game.move(direction_map[direction])
+        
+        self.grid = self.game.grid
+        self.score = self.game.score
+        return result
+    
+    def is_game_over(self):
+        return self.game.is_game_over()
+    
+    def get_state(self):
+        """Flatten the grid for neural network input"""
+        return [cell for row in self.grid for cell in row]
+    
+    def copy(self):
+        """Create a copy of this adapter"""
+        return GameAdapter(grid=self.grid, score=self.score)
+    
+    def __getattr__(self, name):
+        """Forward any other attribute access to the wrapped game"""
+        return getattr(self.game, name)
 
-def normalize_state(state):
-    # return [0.0 if x == 0 else math.log2(x) / 11.0 for x in state]
-    return get_24_inputs(state)
+
+def get_enhanced_inputs(game_adapter):
+    """Get enhanced input features - must match training (24 inputs)"""
+    state = game_adapter.get_state()
+    
+    # Normalized board (16 inputs)
+    normalized_board = [0.0 if x == 0 else math.log2(x) / 11.0 for x in state]
+    
+    max_tile = max(state) if state else 2
+    max_tile_feature = [math.log2(max_tile) / 11.0 if max_tile > 0 else 0]
+    
+    empty_count = sum(1 for x in state if x == 0)
+    empty_feature = [empty_count / 16.0]
+    
+    available_moves = []
+    for direction in ["left", "right", "up", "down"]:
+        old_grid = [row[:] for row in game_adapter.grid]
+        old_score = game_adapter.score
+        can_move = game_adapter.game.move(direction)
+        game_adapter.grid = old_grid
+        game_adapter.game.grid = old_grid
+        game_adapter.score = old_score
+        game_adapter.game.score = old_score
+        available_moves.append(1.0 if can_move else 0.0)
+    
+    smoothness_val = calc_smoothness(game_adapter)
+    smoothness = [smoothness_val / 100.0]
+    
+    monotonicity_val = count_monotonicity(game_adapter)
+    monotonicity = [monotonicity_val / 8.0]
+    
+    return normalized_board + max_tile_feature + empty_feature + available_moves + smoothness + monotonicity
+
+
+def calc_smoothness(game_adapter):
+    """Calculate board smoothness"""
+    board = game_adapter.grid
+    smoothness = 0
+    temp_board = [row[:] for row in board]
+    
+    for rotation in range(2):
+        for i in range(len(temp_board)):
+            for j in range(len(temp_board[i])-1):
+                if temp_board[i][j] != 0 and temp_board[i][j+1] != 0:
+                    current_smoothness = math.fabs(math.log2(temp_board[i][j]) - math.log2(temp_board[i][j+1]))
+                    smoothness = smoothness - current_smoothness
+        
+        temp_board = [[temp_board[len(temp_board)-1-j][i] for j in range(len(temp_board))] 
+                     for i in range(len(temp_board[0]))]
+    
+    return smoothness
+
+
+def count_monotonicity(game_adapter):
+    board = game_adapter.grid
+    monotonicity = 0
+    
+    for row in board:
+        increasing = decreasing = True
+        for j in range(len(row)-1):
+            if row[j] != 0 and row[j+1] != 0:
+                if row[j] < row[j+1]:
+                    increasing = False
+                elif row[j] > row[j+1]:
+                    decreasing = False
+        if increasing or decreasing:
+            monotonicity += 1
+    
+    for col in range(len(board[0])):
+        increasing = decreasing = True
+        for row in range(len(board)-1):
+            if board[row][col] != 0 and board[row+1][col] != 0:
+                if board[row][col] < board[row+1][col]:
+                    increasing = False
+                elif board[row][col] > board[row+1][col]:
+                    decreasing = False
+        if increasing or decreasing:
+            monotonicity += 1
+    
+    return monotonicity
+
 
 def main():
     pygame.init()
-    screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))  # ← Add these if needed
-    pygame.display.set_caption("NEAT 2048")
+    screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
     
-    game = GAME2048()  # Already adds two tiles in __init__
-
+    title = "NEAT 2048 - WITH SEARCH" if USE_SEARCH else "NEAT 2048 - Pure Network"
+    pygame.display.set_caption(title)
+    
+    game = GAME2048()
     game.add_random_tile()
     game.add_random_tile()
+    
+    # Wrap game in adapter for expectimax
+    game_adapter = GameAdapter(game)
 
     clock = pygame.time.Clock()
     running = True
     auto_play = True
     consecutive_not_moved = 0
     NOT_MOVED_THRESHOLD = 10
-    attempted_directions = []
-
 
     while running:
-        dt = clock.tick(60) / 1000.0
+        dt = clock.tick(30 if USE_SEARCH else 60) / 1000.0 
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -132,41 +194,51 @@ def main():
                     game.reset_game()
 
         if auto_play and not game.game_over and not game.moving_animation:
-            state = game.get_state()
-            # inputs = [0 if x == 0 else x.bit_length() - 1 for x in state]
-            inputs = normalize_state(state)
-            output = net.activate(inputs)
-            
-            output_moves = [(i, output[i]) for i in range(len(output))]
-            output_moves.sort(key=lambda x: x[1], reverse=True)
-            
-            moved = False
-            for direction_idx, weight in output_moves:
-                # Avoid immediately repeating the same direction if it didn't work recently
-                if len(attempted_directions) >= 2 and direction_idx == attempted_directions[-1]:
-                    continue
-                    
+            if USE_SEARCH:
+                game_adapter.grid = game.grid
+                game_adapter.score = game.score
+                
+                # Use expectimax search
+                direction_idx = searcher.search(game_adapter, net, get_enhanced_inputs)
                 direction = ["left", "right", "up", "down"][direction_idx]
                 moved = game.move(direction)
+            else:
+                game_adapter.grid = game.grid
+                game_adapter.score = game.score
+                inputs = get_enhanced_inputs(game_adapter)
+                output = net.activate(inputs)
                 
-                if moved:
-                    attempted_directions.append(direction_idx)
-                    if len(attempted_directions) > 3:
-                        attempted_directions.pop(0)
-                    break
+                output_moves = [(i, output[i]) for i in range(len(output))]
+                output_moves.sort(key=lambda x: x[1], reverse=True)
+                
+                moved = False
+                for direction_idx, weight in output_moves:
+                    direction = ["left", "right", "up", "down"][direction_idx]
+                    moved = game.move(direction)
+                    
+                    if moved:
+                        break
                 
             if moved:
                 consecutive_not_moved = 0
-                print(f"Score: {game.score}, Max Tile: {max(max(row) for row in game.grid)}")
+                max_tile = max(max(row) for row in game.grid)
+                print(f"Score: {game.score}, Max Tile: {max_tile}")
+                
+                if max_tile == 2048:
+                    print("🎉 " * 5)
+                    print("2048 ACHIEVED!")
+                    print("🎉 " * 5)
             else:
                 consecutive_not_moved += 1
                 if consecutive_not_moved >= NOT_MOVED_THRESHOLD:
                     game.game_over = True
-                    print(f"Game Over! Score: {game.score}, Max Tile: {max(max(row) for row in game.grid)}")
+                    max_tile = max(max(row) for row in game.grid)
+                    print(f"Game Over! Score: {game.score}, Max Tile: {max_tile}")
 
             if game.is_game_over() and not game.game_over:
                 game.game_over = True
-                print(f"Game Over! Score: {game.score}, Max Tile: {max(max(row) for row in game.grid)}")
+                max_tile = max(max(row) for row in game.grid)
+                print(f"Game Over! Score: {game.score}, Max Tile: {max_tile}")
 
         if not game.game_over:
             game.update_animation(dt)

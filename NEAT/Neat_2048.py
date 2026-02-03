@@ -3,6 +3,7 @@ import pickle
 import math
 from game_logic import Game2048Logic
 from math import log2
+from expectimax_search import ExpectimaxSearch
 
 def normalize(arr):
     """Normalize the array using log2 scaling"""
@@ -104,42 +105,61 @@ def get_enhanced_inputs(game):
     # Total: 16 + 1 + 1 + 4 + 1 + 1 = 24 inputs
     return normalized_board + max_tile_feature + empty_feature + available_moves + smoothness + monotonicity
 
-def eval_genome(genome, config):
+def eval_genome(genome, config, use_search=False, search_depth=2):
+    """
+    Evaluate a genome
+    
+    Args:
+        genome: NEAT genome to evaluate
+        config: NEAT config
+        use_search: Whether to use expectimax search (slower but better)
+        search_depth: Depth of expectimax search (2-3 recommended)
+    """
     net = neat.nn.FeedForwardNetwork.create(genome, config)
     game = Game2048Logic()
+    
+    searcher = ExpectimaxSearch(max_depth=search_depth) if use_search else None
     
     game_over = False
     consecutive_not_moved = 0
     NOT_MOVED_RESTART_THRESHOLD = 10
     moves_made = 0
-    max_moves = 1500
+    max_moves = 2000 if use_search else 1500
     max_tile_achieved = 0
     
     while not game_over and moves_made < max_moves:
         # Get enhanced input features (24 inputs)
         in_neurons = get_enhanced_inputs(game)
         
-        # Activate network
-        output = net.activate(in_neurons)
-
-        # Use the 'most activated' output neuron as the intended direction
-        output_moves = [(i, output[i]) for i in range(len(output))]
-        output_moves = sorted(output_moves, key=lambda x: x[1], reverse=True)
-
-        # Try move the board starting with the highest weighted output direction
-        moved = False
-        for (direction, weight) in output_moves:
+        if use_search:
+            # Use expectimax search guided by neural network
+            direction = searcher.search(game, net, get_enhanced_inputs)
             old_grid = [row[:] for row in game.grid]
             old_score = game.score
+            moved = game.move(direction)
             
-            move_result = game.move(direction)
-            
-            if move_result:
-                moved = True
-                break
-            else:
+            if not moved:
                 game.grid = old_grid
                 game.score = old_score
+        else:
+            # Pure neural network approach (faster, for training)
+            output = net.activate(in_neurons)
+            output_moves = [(i, output[i]) for i in range(len(output))]
+            output_moves = sorted(output_moves, key=lambda x: x[1], reverse=True)
+            
+            moved = False
+            for (direction, weight) in output_moves:
+                old_grid = [row[:] for row in game.grid]
+                old_score = game.score
+                
+                move_result = game.move(direction)
+                
+                if move_result:
+                    moved = True
+                    break
+                else:
+                    game.grid = old_grid
+                    game.score = old_score
 
         if moved:
             consecutive_not_moved = 0
@@ -162,26 +182,25 @@ def fitness(game, max_tile_achieved, timedOut=False):
     monotonicity = count_monotonicity(game)
     empty_tiles = sum(1 for row in game.grid for cell in row if cell == 0)
     
-    # Corner strategy reward
     board = game.grid
     corners = [board[0][0], board[0][3], board[3][0], board[3][3]]
     max_tile = max(cell for row in board for cell in row)
     corner_bonus = 50000 if max_tile in corners else 0
     
-    # Exponential rewards for higher tiles
     tile_bonus = 0
     if max_tile_achieved >= 2048:
-        tile_bonus = 1000000000  
+        tile_bonus = 1000000000  # 1 BILLION
     elif max_tile_achieved >= 1024:
-        tile_bonus = 10000000    
+        tile_bonus = 50000000    # 50 million
     elif max_tile_achieved >= 512:
-        tile_bonus = 100000      
+        tile_bonus = 2000000     # 2 million
     elif max_tile_achieved >= 256:
+        tile_bonus = 100000
+    elif max_tile_achieved >= 128:
         tile_bonus = 10000
     else:
         tile_bonus = max_tile_achieved ** 2
     
-    # Weight components
     fitness_value = (
         score * 10 +
         tile_bonus +
@@ -191,16 +210,16 @@ def fitness(game, max_tile_achieved, timedOut=False):
         smoothness * 100
     )
     
-    # Penalty for getting stuck
     if timedOut:
         fitness_value *= 0.01
     
     return max(fitness_value, 1.0)
 
 def eval_genomes(genomes, config):
-    for genome_id, genome in genomes:  # Loop through the list of (id, genome) tuples
+    """Evaluate all genomes - used during training (no search for speed)"""
+    for genome_id, genome in genomes:
         try:
-            fitness_value = eval_genome(genome, config)  # Pass individual genome
+            fitness_value = eval_genome(genome, config, use_search=False)
             genome.fitness = fitness_value
         except Exception as e:
             genome.fitness = -float('inf')

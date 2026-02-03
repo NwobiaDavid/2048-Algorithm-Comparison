@@ -1,4 +1,3 @@
-# train.py
 import os
 import pickle
 import neat
@@ -17,22 +16,28 @@ def run_neat():
     p.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
-    p.add_reporter(Checkpointer(100))
-    
-    # p = neat.Checkpointer.restore_checkpoint('neat-checkpoint-500')
+    # p.add_reporter(Checkpointer(50))
 
-
-    winner = p.run(eval_genomes, 1000)  # 500+ generations
+    winner = p.run(eval_genomes, 500)
     
-    print("\nTesting winner...")
+    print("\n" + "="*60)
+    print("TESTING WINNER - Pure Neural Network (Fast)")
+    print("="*60)
     for i in range(10):
-        fitness = eval_genome(winner, config)  # ← Use eval_genome (singular)
-        print(f"Test {i+1}: {fitness}")
+        fitness = eval_genome(winner, config, use_search=False)
+        print(f"Test {i+1}: {fitness:,.0f}")
+    
+    print("\n" + "="*60)
+    print("TESTING WINNER - With Expectimax Search (Slow but Better)")
+    print("="*60)
+    for i in range(10):
+        fitness = eval_genome(winner, config, use_search=True, search_depth=2)
+        print(f"Test {i+1}: {fitness:,.0f}")
         
     winner_path = os.path.join(local_dir, 'winner.pkl')
     with open(winner_path, 'wb') as f:
         pickle.dump(winner, f)
-        print("Winner genome saved!")
+        print("\nWinner genome saved!")
 
 if __name__ == '__main__':
     run_neat()
