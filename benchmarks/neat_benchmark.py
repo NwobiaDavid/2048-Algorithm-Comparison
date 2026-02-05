@@ -16,7 +16,6 @@ def load_latest_neat_data():
     if not files:
         raise FileNotFoundError("No Neat results CSV files found in experiments folder!")
     
-    # Sort by modification time to get the latest file
     latest_file = max(files, key=os.path.getmtime)
     print(f"Loading data from: {latest_file}")
     
@@ -25,14 +24,11 @@ def load_latest_neat_data():
 
 def visualize_performance(df):
     """Create comprehensive dashboard visualization."""
-    # Calculate Metrics
+    
     df['Moves_Per_Sec'] = df['Number_of_Moves'] / df['Time_Seconds']
     
-    # Setup Dashboard
     sns.set_style("whitegrid")
     
-    # Defined with Integer keys. 
-    # Added 16384 and 32768 just in case your AI is really good!
     tile_colors = {
         1024: '#edc53f', 
         2048: '#edc22e', 
@@ -42,13 +38,9 @@ def visualize_performance(df):
         32768: '#000000'
     }
     
-    # Force Highest_Tile to be integers so they match the color dictionary keys
     df['Highest_Tile'] = df['Highest_Tile'].astype(int)
     
-    # Filter colors to only include tiles actually present in your data
-    # This prevents the error if you have a tile not in the list
     present_tiles = df['Highest_Tile'].unique()
-    # If a tile shows up that isn't in our color list, give it a default gray
     palette = {tile: tile_colors.get(tile, '#776e65') for tile in present_tiles}
 
     fig = plt.figure(figsize=(18, 12))
@@ -61,8 +53,7 @@ def visualize_performance(df):
     # --- PLOT 1: Reliability ---
     ax1 = fig.add_subplot(gs[0, 0])
     tile_counts = df['Highest_Tile'].value_counts().sort_index()
-    # Use the safe 'palette' variable we created above
-    # Convert to DataFrame for proper hue assignment
+   
     tile_counts_df = pd.DataFrame({'Tile': tile_counts.index, 'Count': tile_counts.values})
     sns.barplot(data=tile_counts_df, x='Tile', y='Count', hue='Tile', palette=palette, ax=ax1, edgecolor='black', legend=False)
     ax1.bar_label(ax1.containers[0])
@@ -74,7 +65,6 @@ def visualize_performance(df):
     try:
         sns.kdeplot(data=df, x='Final_Score', hue='Highest_Tile', palette=palette, fill=True, ax=ax2, common_norm=False, warn_singular=False)
     except Exception:
-        # Fallback to histogram if KDE fails (happens if only 1 data point exists for a tier)
         sns.histplot(data=df, x='Final_Score', hue='Highest_Tile', palette=palette, element='step', ax=ax2)
     ax2.set_title('Score Density by Tile Tier', fontweight='bold')
 
@@ -110,10 +100,8 @@ def visualize_performance(df):
 
 def main():
     try:
-        # Load the data
         df = load_latest_neat_data()
         
-        # Validate required columns
         required_cols = ['Game_Number', 'Highest_Tile', 'Final_Score', 'Time_Seconds', 'Number_of_Moves', 'Success']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
@@ -122,13 +110,6 @@ def main():
         print("Creating Comprehensive Performance Dashboard...")
         visualize_performance(df)
         
-        # print("Creating Survival Curve (Score Distribution)...")
-        # create_survival_curve(df)
-        
-        # print("Creating Growth Trajectory Visualization...")
-        # simulate_growth_trajectory(df)
-        
-        # Print summary statistics
         print("\n" + "="*50)
         print("SUMMARY STATISTICS")
         print("="*50)
@@ -142,7 +123,6 @@ def main():
         print(f"Highest tile achieved: {df['Highest_Tile'].max()}")
         print(f"Most common highest tile: {df['Highest_Tile'].mode()[0] if len(df['Highest_Tile'].mode()) > 0 else 'N/A'}")
         
-        # Consistency measure (coefficient of variation)
         cv_score = df['Final_Score'].std() / df['Final_Score'].mean()
         print(f"Score consistency (CV): {cv_score:.3f} ({'Consistent' if cv_score < 0.5 else 'Volatile'})")
 
