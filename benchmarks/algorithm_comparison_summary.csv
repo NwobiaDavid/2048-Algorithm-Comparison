@@ -1,0 +1,5 @@
+Algorithm,Games_Played,Success_Rate,Avg_Score,Median_Score,Std_Score,Max_Score,Min_Score,Avg_Max_Tile,Median_Max_Tile,Avg_Time,Avg_Moves
+Expectimax,10,100.00%,"55,718","37,334","35,237","125,932","27,384","3,686","2,048",46.91s,2588
+Monte Carlo,10,20.00%,"13,830","11,388","9,293","31,532","4,548",973,768,42.45s,793
+NEAT + Expectimax,10,10.00%,"10,886","11,760","5,017","22,440","5,148",922,"1,024",39.53s,659
+NEAT Pure,10,0.00%,"3,182","3,350","1,421","5,900",852,237,256,2.30s,1220
