@@ -144,7 +144,7 @@ def create_comparison_plots(data_dict):
     plt.ylabel('Highest Tile Achieved')
     
     plt.tight_layout()
-    plt.savefig('benchmarks/comparison_summary.png', dpi=300, bbox_inches='tight')
+    plt.savefig('benchmarks/graphs/comparison_summary.png', dpi=300, bbox_inches='tight')
     plt.show()
 
 

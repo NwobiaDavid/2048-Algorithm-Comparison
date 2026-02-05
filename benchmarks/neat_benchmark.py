@@ -103,6 +103,9 @@ def visualize_performance(df):
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
+    
+    plt.savefig(f"benchmarks/graphs/neat_with_search_performance_dashboard.png", dpi=300, bbox_inches='tight')
+    # plt.savefig(f"benchmarks/graphs/neat_pure_network_performance_dashboard.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 def main():

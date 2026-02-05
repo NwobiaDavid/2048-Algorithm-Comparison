@@ -99,98 +99,10 @@ def visualize_performance(df):
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
+    
+    plt.savefig('benchmarks/graphs/expectimax_performance_dashboard.png', dpi=300, bbox_inches='tight')
     plt.show()
 
-# def create_survival_curve(df):
-#     """Create a histogram showing the distribution of final scores."""
-#     plt.figure(figsize=(12, 6))
-    
-#     # Create bins for the score ranges
-#     min_score = int(df['Final_Score'].min())
-#     max_score = int(df['Final_Score'].max())
-#     bin_size = max(100, (max_score - min_score) // 20)  # Adjust bin size based on data range
-    
-#     bins = range(min_score, max_score + bin_size, bin_size)
-    
-#     plt.hist(df['Final_Score'], bins=bins, edgecolor='black', alpha=0.7)
-#     plt.xlabel('Final Score')
-#     plt.ylabel('Frequency (Number of Games)')
-#     plt.title('Distribution of Final Scores (Survival Curve)\nShows Algorithm Consistency/Reliability')
-#     plt.grid(True, alpha=0.3, axis='y')
-    
-#     # Add some statistics as text on the plot
-#     mean_score = df['Final_Score'].mean()
-#     std_score = df['Final_Score'].std()
-#     plt.axvline(mean_score, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_score:.0f}')
-    
-#     plt.legend()
-#     plt.tight_layout()
-#     plt.show()
-
-# def simulate_growth_trajectory(df):
-#     """Simulate growth trajectory by creating artificial move-score pairs."""
-#     # Since we don't have per-move data, we'll interpolate between start (0,0) and end (moves, final_score)
-#     # For demonstration, let's create sample trajectories based on the average progression
-#     fig, ax = plt.subplots(figsize=(12, 6))
-    
-#     # Sample a few games to show individual trajectories (for visualization)
-#     sample_size = min(10, len(df))  # Only show up to 10 sample trajectories
-#     sample_df = df.sample(n=sample_size, random_state=42)
-    
-#     all_trajectories = []
-    
-#     for idx, row in sample_df.iterrows():
-#         moves = int(row['Number_of_Moves'])
-#         final_score = row['Final_Score']
-        
-#         # Create interpolated points from (0,0) to (moves, final_score)
-#         if moves > 0:
-#             move_points = np.linspace(0, moves, num=min(moves + 1, 100))  # Limit to 100 points for performance
-#             score_points = np.interp(move_points, [0, moves], [0, final_score])
-            
-#             ax.plot(move_points, score_points, alpha=0.6, linewidth=1)
-#             # Store for potential average calculation
-#             all_trajectories.append((move_points, score_points))
-    
-#     ax.set_xlabel('Move Number')
-#     ax.set_ylabel('Current Score')
-#     ax.set_title('Sample Growth Trajectories (Efficiency Visualization)\nShows how quickly scores increase per move')
-#     ax.grid(True, alpha=0.3)
-    
-#     plt.tight_layout()
-#     plt.show()
-    
-#     # Also show an average trajectory if possible
-#     if all_trajectories:
-#         # Find the maximum number of moves to align all trajectories
-#         max_moves = max(int(row['Number_of_Moves']) for _, row in sample_df.iterrows()) if len(sample_df) > 0 else 100
-        
-#         # Create aligned arrays for averaging
-#         aligned_scores = np.zeros((len(all_trajectories), max_moves + 1))
-        
-#         for i, (moves_arr, scores_arr) in enumerate(all_trajectories):
-#             moves_int = [int(m) for m in moves_arr if int(m) <= max_moves]
-#             scores_interp = np.interp(range(max_moves + 1), moves_int, scores_arr, right=0)
-#             aligned_scores[i] = scores_interp
-        
-#         # Calculate average score at each move
-#         avg_scores = np.mean(aligned_scores, axis=0)
-#         moves_range = range(max_moves + 1)
-        
-#         # Plot the average trajectory
-#         plt.figure(figsize=(12, 6))
-#         plt.plot(moves_range, avg_scores, color='red', linewidth=2, label='Average Trajectory')
-#         plt.fill_between(moves_range, 
-#                         np.min(aligned_scores, axis=0), 
-#                         np.max(aligned_scores, axis=0), 
-#                         alpha=0.2, color='red', label='Min-Max Range')
-#         plt.xlabel('Move Number')
-#         plt.ylabel('Current Score')
-#         plt.title('Average Growth Trajectory\nShows Average Efficiency Across All Games')
-#         plt.legend()
-#         plt.grid(True, alpha=0.3)
-#         plt.tight_layout()
-#         plt.show()
 
 def main():
     try:
