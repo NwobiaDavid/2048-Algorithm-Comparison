@@ -2,6 +2,8 @@ import pygame
 import random
 import copy
 import time
+import os
+import csv
 from collections import defaultdict
 pygame.font.init()
 
@@ -17,6 +19,7 @@ pygame.init()
 pygame.display.set_caption("Expectimax 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
+MOVES_FONT = pygame.font.SysFont("comicsans", 20, bold=True) 
 TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
 
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
@@ -34,6 +37,7 @@ TILE_COLORS = {
     512: (237, 200, 80),
     1024: (237, 197, 63),
     2048: (237, 194, 46),
+    4096: (60, 58, 50)
 }
 
 def get_empty_cells(grid):
@@ -463,6 +467,7 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.font = TILE_FONT
+        self.moves_font = MOVES_FONT
         self.timer_font = TIMER_FONT
         self.game_over = False
         self.moving_animation = False
@@ -635,7 +640,7 @@ class GAME2048:
         pygame.draw.rect(screen, (187, 173, 160), (0, 0, WINDOW_SIZE, HEADER_HEIGHT))
         
         score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
-        moves_text = self.font.render(f"Moves: {self.moves}", True, (255, 255, 255))
+        moves_text = self.moves_font.render(f"Moves: {self.moves}", True, (255, 255, 255))
         
         elasped_time = self.get_elapsed_time()
         time_text = self.timer_font.render(f"Time: {elasped_time:.1f}s", True, (255, 255, 255))
@@ -663,7 +668,7 @@ class GAME2048:
                         
                     value = self.grid[row][col]
                     if value != 0:
-                        color = TILE_COLORS.get(value, TILE_COLORS[2048])
+                        color = TILE_COLORS.get(value, TILE_COLORS[4096])
                         pygame.draw.rect(screen, color, (current_x, current_y, TILE_SIZE, TILE_SIZE), 0, 5)
                     
                         text_color = (119, 110, 101) if value <= 4 else (249, 246, 242)
@@ -678,7 +683,7 @@ class GAME2048:
                     y = row * TILE_SIZE + (row + 1) * GAP + HEADER_HEIGHT
                     
                     value = self.grid[row][col]
-                    color = TILE_COLORS.get(value, TILE_COLORS[2048])
+                    color = TILE_COLORS.get(value, TILE_COLORS[4096])
                     
                     pygame.draw.rect(screen, color, (x, y, TILE_SIZE, TILE_SIZE), 0, 5)
                     
@@ -688,19 +693,20 @@ class GAME2048:
                         text_rect = text_surface.get_rect(center=(x + TILE_SIZE//2, y + TILE_SIZE//2))
                         screen.blit(text_surface, text_rect) 
                         
-        if self.game_over:
-            overlay = pygame.Surface((WINDOW_SIZE, T_WIN_SIZE))
-            overlay.set_alpha(180)
-            overlay.fill((0, 0, 0))
-            screen.blit(overlay, (0, 0))
-            
-            game_over_text = OVER_FONT.render("GAME OVER", True, (255, 255, 255))
-            text_rect = game_over_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2))
-            screen.blit(game_over_text, text_rect)
-            
-            restart_text = self.font.render("Press R to Restart", True, (255, 255, 255))
-            restart_rect = restart_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 50))
-            screen.blit(restart_text, restart_rect)
+        # Don't show game over screen in automated mode
+        # if self.game_over:
+        #     overlay = pygame.Surface((WINDOW_SIZE, T_WIN_SIZE))
+        #     overlay.set_alpha(180)
+        #     overlay.fill((0, 0, 0))
+        #     screen.blit(overlay, (0, 0))
+        #     
+        #     game_over_text = OVER_FONT.render("GAME OVER", True, (255, 255, 255))
+        #     text_rect = game_over_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2))
+        #     screen.blit(game_over_text, text_rect)
+        #     
+        #     restart_text = self.font.render("Press R to Restart", True, (255, 255, 255))
+        #     restart_rect = restart_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 50))
+        #     screen.blit(restart_text, restart_rect)
                     
     def animate_move(self, direction):
         self.moving_animation = True
@@ -775,60 +781,122 @@ class GAME2048:
         self.is_timer_running = True
         self.add_random_tile()
         self.add_random_tile()                   
+
+
+def run_experiment(num_games=100):
+    # Create experiments directory if it doesn't exist
+    os.makedirs("benchmarks", exist_ok=True)
+    
+    # Prepare CSV file path
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"benchmarks/expectimax_results_{timestamp}.csv"
+    
+    # Header for the CSV file
+    headers = ['Game_Number', 'Highest_Tile', 'Final_Score', 'Time_Seconds', 'Number_of_Moves', 'Success']
+    
+    # List to store results
+    results = []
+    
+    print(f"Starting {num_games} games...")
+    
+    completed_games = 0
+    
+    while completed_games < num_games:
+        game_num = completed_games + 1
+        print(f"Running game {game_num}/{num_games}")
         
-def run():
-    game = GAME2048()
-    game.add_random_tile()
-    game.add_random_tile()
-    
-    clock = pygame.time.Clock()
-    running = True
-    
-    ai_playing = True
-    ai_move_delay = 0
-    ai_move_interval = 1
-    
-    while running:
-        dt = clock.tick(60) / 1000.0
-        ai_move_delay += 1
+        game = GAME2048()
+        game.add_random_tile()
+        game.add_random_tile()
         
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
+        clock = pygame.time.Clock()
+        running = True
+        
+        ai_playing = True
+        ai_move_delay = 0
+        ai_move_interval = 1
+        
+        # Main game loop for this specific game
+        while running and not game.game_over:
+            dt = clock.tick(60) / 1000.0
+            ai_move_delay += 1
+            
+            for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_r:
-                        game.reset_game()
-                    elif event.key == pygame.K_SPACE:
-                        ai_playing = not ai_playing
-                        print("AI Mode:", "ON" if ai_playing else "OFF")
-                        if ai_playing:
-                            game.resume_timer()
-                        else:
-                            game.pause_timer()
-                        
-        if ai_playing and not game.moving_animation and not game.game_over and ai_move_delay >= ai_move_interval:
-            ai_move_delay = 0
-            start_time = time.time()
-            ai_move = get_ai_move(game.grid, depth=-1, heuristic_idx=2)
-            end_time = time.time()
-            print(f"AI took {end_time - start_time:.3f} seconds")
-            if ai_move:
-                game.move(ai_move)
-                game.game_over = game.is_game_over()
-                if game.game_over:
-                    game.record_game_end_time()
-                
-        if not game.game_over:
-            game.update_animation(dt)
+                    return  # Exit the entire experiment
+                    
+            if ai_playing and not game.moving_animation and not game.game_over and ai_move_delay >= ai_move_interval:
+                ai_move_delay = 0
+                # AI move selection happens here
+                ai_move = get_ai_move(game.grid, depth=-1, heuristic_idx=2)
+                if ai_move:
+                    game.move(ai_move)
+                    game.game_over = game.is_game_over()
+                    if game.game_over:
+                        game.record_game_end_time()
+                    
+            if not game.game_over:
+                game.update_animation(dt)
+            
+            game.draw(screen)   
+            pygame.display.flip()
         
-        game.draw(screen)   
-        pygame.display.flip()
+        # Calculate game duration using the internal timer
+        game_time = game.get_elapsed_time()
         
-    pygame.quit()
+        # Record game statistics
+        highest_tile = get_max_tile(game.grid)  # Use function instead of method
+        final_score = game.score
+        num_moves = game.moves
+        success = highest_tile >= 2048
+        
+        result = {
+            'Game_Number': game_num,
+            'Highest_Tile': highest_tile,
+            'Final_Score': final_score,
+            'Time_Seconds': round(game_time, 2),
+            'Number_of_Moves': num_moves,
+            'Success': success
+        }
+        
+        results.append(result)
+        print(f"Game {game_num}: Highest Tile={highest_tile}, Score={final_score}, Time={game_time:.2f}s, Moves={num_moves}, Success={success}")
+        
+        completed_games += 1
+    
+    # Write results to CSV
+    with open(csv_filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(results)
+    
+    print(f"\nBenchmarks completed! Results saved to {csv_filename}")
+    
+    # Print summary statistics
+    successful_games = sum(1 for r in results if r['Success'])
+    avg_score = sum(r['Final_Score'] for r in results) / len(results)
+    avg_time = sum(r['Time_Seconds'] for r in results) / len(results)
+    avg_moves = sum(r['Number_of_Moves'] for r in results) / len(results)
+    
+    print(f"\nSummary:")
+    print(f"Total games played: {len(results)}")
+    print(f"Successful games (reached 2048): {successful_games}")
+    print(f"Success rate: {successful_games/len(results)*100:.2f}%")
+    print(f"Average score: {avg_score:.2f}")
+    print(f"Average time: {avg_time:.2f}s")
+    print(f"Average moves: {avg_moves:.2f}")
+    
+    # Print tile distribution
+    tile_counts = {}
+    for r in results:
+        tile = r['Highest_Tile']
+        tile_counts[tile] = tile_counts.get(tile, 0) + 1
+    
+    print("\nTile distribution:")
+    for tile in sorted(tile_counts.keys(), reverse=True):
+        print(f"  {tile}: {tile_counts[tile]} games")
+
 
 if __name__ == "__main__":
-    run()
-    
+    run_experiment(10)
