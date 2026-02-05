@@ -4,10 +4,13 @@ import pygame
 import pickle
 import neat
 import math
+import csv
+import time
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 local_dir = os.path.dirname(__file__)
 pickle_path = os.path.join(local_dir, 'winner.pkl')
+# pickle_path = os.path.join(local_dir, 'winner-pureNEAT.pkl')
                            
 sys.path.append(parent_dir)
 
@@ -20,6 +23,16 @@ GAP = 10
 HEADER_HEIGHT = 80
 WINDOW_SIZE = GRID_SIZE * TILE_SIZE + (GRID_SIZE + 1)*GAP
 T_WIN_SIZE = WINDOW_SIZE + HEADER_HEIGHT
+
+pygame.init()
+
+USE_SEARCH = True
+# USE_SEARCH = False 
+
+
+screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
+title = "NEAT 2048 - WITH SEARCH" if USE_SEARCH else "NEAT 2048 - Pure Network"
+pygame.display.set_caption(title)
 
 config_path = os.path.join(local_dir, 'config-feedforward.txt')
 config = neat.Config(
@@ -36,7 +49,6 @@ with open(pickle_path, 'rb') as f:
 net = neat.nn.FeedForwardNetwork.create(winner, config)
 
 # Initialize expectimax searcher
-USE_SEARCH = True 
 SEARCH_DEPTH = 4  
 searcher = ExpectimaxSearch(max_depth=SEARCH_DEPTH) if USE_SEARCH else None
 
@@ -160,93 +172,159 @@ def count_monotonicity(game_adapter):
     
     return monotonicity
 
-
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
+def run_experiment(num_games=100):
+    # Create benchmarks directory if it doesn't exist
+    os.makedirs("benchmarks", exist_ok=True)
     
-    title = "NEAT 2048 - WITH SEARCH" if USE_SEARCH else "NEAT 2048 - Pure Network"
-    pygame.display.set_caption(title)
+    # Prepare CSV file path
+    search_type = "with_search" if USE_SEARCH else "pure_network"
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"benchmarks/neat_{search_type}_results_{timestamp}.csv"
     
-    game = GAME2048()
-    game.add_random_tile()
-    game.add_random_tile()
+    # Header for the CSV file
+    headers = ['Game_Number', 'Highest_Tile', 'Final_Score', 'Time_Seconds', 'Number_of_Moves', 'Success']
     
-    # Wrap game in adapter for expectimax
-    game_adapter = GameAdapter(game)
+    # List to store results
+    results = []
+    
+    print(f"Starting {num_games} games...")
+    print(f"Using {'NEAT with Expectimax Search' if USE_SEARCH else 'Pure NEAT Network'}")
+    
+    completed_games = 0
+    
+    while completed_games < num_games:
+        game_num = completed_games + 1
+        print(f"Running game {game_num}/{num_games}")
+        
+        # Initialize game without pygame display
+        game = GAME2048()
+        game.add_random_tile()
+        game.add_random_tile()
+        
+        # Wrap game in adapter for expectimax
+        game_adapter = GameAdapter(game)
 
-    clock = pygame.time.Clock()
-    running = True
-    auto_play = True
-    consecutive_not_moved = 0
-    NOT_MOVED_THRESHOLD = 10
+        clock = pygame.time.Clock()
+        running = True
+        auto_play = True
+        consecutive_not_moved = 0
+        NOT_MOVED_THRESHOLD = 10
 
-    while running:
-        dt = clock.tick(30 if USE_SEARCH else 60) / 1000.0 
+        # Start timing for this specific game
+        start_time = time.time()
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    auto_play = not auto_play
-                elif event.key == pygame.K_r and game.game_over:
-                    game.reset_game()
+        while running and not game.game_over:
+            dt = clock.tick(120) / 1000.0  # Higher FPS for faster execution
 
-        if auto_play and not game.game_over and not game.moving_animation:
-            if USE_SEARCH:
-                game_adapter.grid = game.grid
-                game_adapter.score = game.score
-                
-                # Use expectimax search
-                direction_idx = searcher.search(game_adapter, net, get_enhanced_inputs)
-                direction = ["left", "right", "up", "down"][direction_idx]
-                moved = game.move(direction)
-            else:
-                game_adapter.grid = game.grid
-                game_adapter.score = game.score
-                inputs = get_enhanced_inputs(game_adapter)
-                output = net.activate(inputs)
-                
-                output_moves = [(i, output[i]) for i in range(len(output))]
-                output_moves.sort(key=lambda x: x[1], reverse=True)
-                
-                moved = False
-                for direction_idx, weight in output_moves:
+            # Process events without drawing anything for speed
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    return  # Exit the entire experiment
+
+            if auto_play and not game.game_over and not game.moving_animation:
+                if USE_SEARCH:
+                    game_adapter.grid = game.grid
+                    game_adapter.score = game.score
+                    
+                    # Use expectimax search
+                    direction_idx = searcher.search(game_adapter, net, get_enhanced_inputs)
                     direction = ["left", "right", "up", "down"][direction_idx]
                     moved = game.move(direction)
+                else:
+                    game_adapter.grid = game.grid
+                    game_adapter.score = game.score
+                    inputs = get_enhanced_inputs(game_adapter)
+                    output = net.activate(inputs)
                     
-                    if moved:
+                    output_moves = [(i, output[i]) for i in range(len(output))]
+                    output_moves.sort(key=lambda x: x[1], reverse=True)
+                    
+                    moved = False
+                    for direction_idx, weight in output_moves:
+                        direction = ["left", "right", "up", "down"][direction_idx]
+                        moved = game.move(direction)
+                        
+                        if moved:
+                            break
+                
+                if moved:
+                    consecutive_not_moved = 0
+                    # Only print occasionally to reduce output overhead
+                    if game.moves % 50 == 0:
+                        max_tile = max(max(row) for row in game.grid)
+                        # print(f"Move {game.moves}, Score: {game.score}, Max Tile: {max_tile}")
+                else:
+                    consecutive_not_moved += 1
+                    if consecutive_not_moved >= NOT_MOVED_THRESHOLD:
+                        game.game_over = True
                         break
-                
-            if moved:
-                consecutive_not_moved = 0
-                max_tile = max(max(row) for row in game.grid)
-                print(f"Score: {game.score}, Max Tile: {max_tile}")
-                
-                if max_tile == 2048:
-                    print("🎉 " * 5)
-                    print("2048 ACHIEVED!")
-                    print("🎉 " * 5)
-            else:
-                consecutive_not_moved += 1
-                if consecutive_not_moved >= NOT_MOVED_THRESHOLD:
+
+                if game.is_game_over() and not game.game_over:
                     game.game_over = True
-                    max_tile = max(max(row) for row in game.grid)
-                    print(f"Game Over! Score: {game.score}, Max Tile: {max_tile}")
+                    break
 
-            if game.is_game_over() and not game.game_over:
-                game.game_over = True
-                max_tile = max(max(row) for row in game.grid)
-                print(f"Game Over! Score: {game.score}, Max Tile: {max_tile}")
+            if not game.game_over:
+                game.update_animation(dt)
 
-        if not game.game_over:
-            game.update_animation(dt)
+            game.draw(screen)
+            pygame.display.flip()
 
-        game.draw(screen)
-        pygame.display.flip()
-
-    pygame.quit()
-
+        # Calculate game duration
+        game_time = time.time() - start_time
+        
+        # Record game statistics
+        highest_tile = max(max(row) for row in game.grid)
+        final_score = game.score
+        num_moves = game.moves
+        success = highest_tile >= 2048
+        
+        result = {
+            'Game_Number': game_num,
+            'Highest_Tile': highest_tile,
+            'Final_Score': final_score,
+            'Time_Seconds': round(game_time, 2),
+            'Number_of_Moves': num_moves,
+            'Success': success
+        }
+        
+        results.append(result)
+        print(f"Game {game_num}: Highest Tile={highest_tile}, Score={final_score}, Time={game_time:.2f}s, Moves={num_moves}, Success={success}")
+        
+        completed_games += 1
+    
+    # Write results to CSV
+    with open(csv_filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(results)
+    
+    print(f"\nBenchmarks completed! Results saved to {csv_filename}")
+    
+    # Print summary statistics
+    successful_games = sum(1 for r in results if r['Success'])
+    avg_score = sum(r['Final_Score'] for r in results) / len(results)
+    avg_time = sum(r['Time_Seconds'] for r in results) / len(results)
+    avg_moves = sum(r['Number_of_Moves'] for r in results) / len(results)
+    
+    print(f"\nSummary:")
+    print(f"Total games played: {len(results)}")
+    print(f"Successful games (reached 2048): {successful_games}")
+    print(f"Success rate: {successful_games/len(results)*100:.2f}%")
+    print(f"Average score: {avg_score:.2f}")
+    print(f"Average time: {avg_time:.2f}s")
+    print(f"Average moves: {avg_moves:.2f}")
+    
+    # Print tile distribution
+    tile_counts = {}
+    for r in results:
+        tile = r['Highest_Tile']
+        tile_counts[tile] = tile_counts.get(tile, 0) + 1
+    
+    print("\nTile distribution:")
+    for tile in sorted(tile_counts.keys(), reverse=True):
+        print(f"  {tile}: {tile_counts[tile]} games")
+        
 if __name__ == "__main__":
-    main()
+    # main()
+    run_experiment(10)

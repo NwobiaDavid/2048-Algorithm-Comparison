@@ -14,6 +14,7 @@ pygame.init()
 pygame.display.set_caption("Original 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
+MOVES_FONT = pygame.font.SysFont("comicsans", 20, bold=True) 
 TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
 
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
@@ -31,6 +32,7 @@ TILE_COLORS = {
     512: (237, 200, 80),
     1024: (237, 197, 63),
     2048: (237, 194, 46),
+    4096: (60, 58, 50)
 }
 class GAME2048:
     def __init__(self):
@@ -42,6 +44,7 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.font = TILE_FONT
+        self.moves_font = MOVES_FONT
         self.timer_font = TIMER_FONT
         self.game_over = False
         self.moving_animation = False
@@ -238,7 +241,7 @@ class GAME2048:
         pygame.draw.rect(screen, (187, 173, 160), (0, 0, WINDOW_SIZE, HEADER_HEIGHT))
         
         score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
-        moves_text = self.font.render(f"Moves: {self.moves}", True, (255, 255, 255))
+        moves_text = self.moves_font.render(f"Moves: {self.moves}", True, (255, 255, 255))
         
         elasped_time = self.get_elapsed_time()
         time_text = self.timer_font.render(f"Time: {elasped_time:.1f}s", True, (255, 255, 255))
@@ -267,7 +270,7 @@ class GAME2048:
                     value = self.grid[row][col]
                     if value != 0:
                         
-                        color = TILE_COLORS.get(value, TILE_COLORS[2048])
+                        color = TILE_COLORS.get(value, TILE_COLORS[4096])
                         pygame.draw.rect(screen, color, (current_x, current_y, TILE_SIZE, TILE_SIZE), 0, 5)
                     
                         text_color = (119, 110, 101) if value <= 4 else (249, 246, 242)
@@ -282,7 +285,7 @@ class GAME2048:
                     y = row * TILE_SIZE + (row + 1) * GAP + HEADER_HEIGHT
                     
                     value = self.grid[row][col]
-                    color = TILE_COLORS.get(value, TILE_COLORS[2048])
+                    color = TILE_COLORS.get(value, TILE_COLORS[4096])
                     
                     pygame.draw.rect(screen, color, (x, y, TILE_SIZE, TILE_SIZE), 0, 5)
                     
