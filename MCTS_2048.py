@@ -3,6 +3,9 @@ import random
 import math
 import numpy as np
 from numba import jit
+import os
+import csv
+import time
 
 pygame.font.init()
 
@@ -17,6 +20,7 @@ pygame.init()
 pygame.display.set_caption("Monte Carlo 2048")
 TILE_FONT = pygame.font.SysFont("comicsans", 32, bold=True)
 OVER_FONT = pygame.font.SysFont("comicsans", 48, bold=True)
+MOVES_FONT = pygame.font.SysFont("comicsans", 20, bold=True) 
 TIMER_FONT = pygame.font.SysFont("comicsans", 20, bold=True)
 
 screen = pygame.display.set_mode((WINDOW_SIZE, T_WIN_SIZE))
@@ -224,6 +228,7 @@ class GAME2048:
         self.score = 0
         self.moves = 0
         self.font = TILE_FONT
+        self.moves_font = MOVES_FONT
         self.timer_font = TIMER_FONT
         self.game_over = False
         self.start_time = pygame.time.get_ticks()
@@ -300,7 +305,7 @@ class GAME2048:
         pygame.draw.rect(screen, (187, 173, 160), (0, 0, WINDOW_SIZE, HEADER_HEIGHT))
         
         score_text = self.font.render(f"Score: {self.score}", True, (255, 255, 255))
-        moves_text = self.font.render(f"Moves: {self.moves}", True, (255, 255, 255))
+        moves_text = self.moves_font.render(f"Moves: {self.moves}", True, (255, 255, 255))
         elapsed_time = self.get_elapsed_time()
         time_text = self.timer_font.render(f"Time: {elapsed_time:.1f}s", True, (255, 255, 255))
         
@@ -356,69 +361,184 @@ class GAME2048:
         self.add_random_tile()
         print("\n🎮 New game started!")
 
-def run():
-    game = GAME2048()
-    game.add_random_tile()
-    game.add_random_tile()
+# def run():
+#     game = GAME2048()
+#     game.add_random_tile()
+#     game.add_random_tile()
     
-    clock = pygame.time.Clock()
-    running = True
+#     clock = pygame.time.Clock()
+#     running = True
     
-    ai_mode = True
-    ai_delay = 0.2  # Slower for more reliable Monte Carlo results
-    last_ai_move_time = 0
+#     ai_mode = True
+#     ai_delay = 0.2  # Slower for more reliable Monte Carlo results
+#     last_ai_move_time = 0
     
-    print("Warming up JIT compilation...")
-    dummy_board = np.array([[2, 4, 8, 16], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32)
-    for i in range(4):
-        make_move_numba(dummy_board, i)
-    print("Ready! Press SPACE to toggle AI mode")
-    print("AI will use Monte Carlo simulation to choose moves!")
+#     print("Warming up JIT compilation...")
+#     dummy_board = np.array([[2, 4, 8, 16], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]], dtype=np.int32)
+#     for i in range(4):
+#         make_move_numba(dummy_board, i)
+#     print("Ready! Press SPACE to toggle AI mode")
+#     print("AI will use Monte Carlo simulation to choose moves!")
     
-    while running:
-        dt = clock.tick(60) / 1000.0
+#     while running:
+#         dt = clock.tick(60) / 1000.0
         
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if game.game_over:
-                    if event.key == pygame.K_r:
-                        game.reset_game()
-                elif event.key == pygame.K_SPACE:
-                    ai_mode = not ai_mode
-                    print(f"AI Mode: {'ON' if ai_mode else 'OFF'}")
-                elif not ai_mode:
-                    # Manual controls
-                    if event.key == pygame.K_UP:
-                        game.move("up")
-                    elif event.key == pygame.K_DOWN:
-                        game.move("down")
-                    elif event.key == pygame.K_LEFT:
-                        game.move("left")
-                    elif event.key == pygame.K_RIGHT:
-                        game.move("right")
+#         for event in pygame.event.get():
+#             if event.type == pygame.QUIT:
+#                 running = False
+#             elif event.type == pygame.KEYDOWN:
+#                 if game.game_over:
+#                     if event.key == pygame.K_r:
+#                         game.reset_game()
+#                 elif event.key == pygame.K_SPACE:
+#                     ai_mode = not ai_mode
+#                     print(f"AI Mode: {'ON' if ai_mode else 'OFF'}")
+#                 elif not ai_mode:
+#                     # Manual controls
+#                     if event.key == pygame.K_UP:
+#                         game.move("up")
+#                     elif event.key == pygame.K_DOWN:
+#                         game.move("down")
+#                     elif event.key == pygame.K_LEFT:
+#                         game.move("left")
+#                     elif event.key == pygame.K_RIGHT:
+#                         game.move("right")
         
-        if ai_mode and not game.game_over:
-            current_time = pygame.time.get_ticks() / 1000.0
-            if current_time - last_ai_move_time >= ai_delay:
-                best_action = monte_carlo_search(game, runs_per_move=25)
-                moved = game.move(best_action)
+#         if ai_mode and not game.game_over:
+#             current_time = pygame.time.get_ticks() / 1000.0
+#             if current_time - last_ai_move_time >= ai_delay:
+#                 best_action = monte_carlo_search(game, runs_per_move=25)
+#                 moved = game.move(best_action)
                 
-                if moved:
-                    game.game_over = game.is_game_over()
-                    if game.game_over:
-                        game.record_game_end_time()
-                        print(f"\n❌ Game Over! Max Tile: {game.max_tile_achieved}, Score: {game.score}, Moves: {game.moves}, Time: {game.game_end_time:.1f}s")
-                        if game.max_tile_achieved >= 2048:
-                            print("🏆 SUCCESS! Reached 2048 or higher!")
+#                 if moved:
+#                     game.game_over = game.is_game_over()
+#                     if game.game_over:
+#                         game.record_game_end_time()
+#                         print(f"\n❌ Game Over! Max Tile: {game.max_tile_achieved}, Score: {game.score}, Moves: {game.moves}, Time: {game.game_end_time:.1f}s")
+#                         if game.max_tile_achieved >= 2048:
+#                             print("🏆 SUCCESS! Reached 2048 or higher!")
                         
-                last_ai_move_time = current_time
+#                 last_ai_move_time = current_time
                 
-        game.draw(screen)
-        pygame.display.flip()
+#         game.draw(screen)
+#         pygame.display.flip()
         
-    pygame.quit()
+#     pygame.quit()
 
+def run_experiment(num_games=100):
+    # Create experiments directory if it doesn't exist
+    os.makedirs("benchmarks", exist_ok=True)
+    
+    # Prepare CSV file path
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"benchmarks/monte_carlo_results_{timestamp}.csv"
+    
+    # Header for the CSV file
+    headers = ['Game_Number', 'Highest_Tile', 'Final_Score', 'Time_Seconds', 'Number_of_Moves', 'Success']
+    
+    # List to store results
+    results = []
+    
+    print(f"Starting {num_games} games...")
+    
+    completed_games = 0
+    
+    while completed_games < num_games:
+        game_num = completed_games + 1
+        print(f"Running game {game_num}/{num_games}")
+        
+        game = GAME2048()
+        game.add_random_tile()
+        game.add_random_tile()
+        
+        clock = pygame.time.Clock()
+        running = True
+        
+        ai_mode = True
+        ai_delay = 0.05  # Faster for experiment efficiency
+        last_ai_move_time = 0
+        
+        # Main game loop for this specific game
+        while running and not game.game_over:
+            dt = clock.tick(120) / 1000.0  # Higher FPS for faster execution
+            
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    return  # Exit the entire experiment
+        
+            if ai_mode and not game.game_over:
+                current_time = pygame.time.get_ticks() / 1000.0
+                if current_time - last_ai_move_time >= ai_delay:
+                    best_action = monte_carlo_search(game, runs_per_move=25)  # Reduced runs for speed
+                    moved = game.move(best_action)
+                    
+                    if moved:
+                        game.game_over = game.is_game_over()
+                        if game.game_over:
+                            game.record_game_end_time()
+                            
+                    last_ai_move_time = current_time
+            
+            game.draw(screen)
+            pygame.display.flip()
+        
+        # Calculate game duration using the internal timer
+        game_time = game.get_elapsed_time()
+        
+        # Record game statistics
+        highest_tile = game.max_tile_achieved
+        final_score = game.score
+        num_moves = game.moves
+        success = highest_tile >= 2048
+        
+        result = {
+            'Game_Number': game_num,
+            'Highest_Tile': highest_tile,
+            'Final_Score': final_score,
+            'Time_Seconds': round(game_time, 2),
+            'Number_of_Moves': num_moves,
+            'Success': success
+        }
+        
+        results.append(result)
+        print(f"Game {game_num}: Highest Tile={highest_tile}, Score={final_score}, Time={game_time:.2f}s, Moves={num_moves}, Success={success}")
+        
+        completed_games += 1
+    
+    # Write results to CSV
+    with open(csv_filename, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(results)
+    
+    print(f"\nExperiment completed! Results saved to {csv_filename}")
+    
+    # Print summary statistics
+    successful_games = sum(1 for r in results if r['Success'])
+    avg_score = sum(r['Final_Score'] for r in results) / len(results)
+    avg_time = sum(r['Time_Seconds'] for r in results) / len(results)
+    avg_moves = sum(r['Number_of_Moves'] for r in results) / len(results)
+    
+    print(f"\nSummary:")
+    print(f"Total games played: {len(results)}")
+    print(f"Successful games (reached 2048): {successful_games}")
+    print(f"Success rate: {successful_games/len(results)*100:.2f}%")
+    print(f"Average score: {avg_score:.2f}")
+    print(f"Average time: {avg_time:.2f}s")
+    print(f"Average moves: {avg_moves:.2f}")
+    
+    # Print tile distribution
+    tile_counts = {}
+    for r in results:
+        tile = r['Highest_Tile']
+        tile_counts[tile] = tile_counts.get(tile, 0) + 1
+    
+    print("\nTile distribution:")
+    for tile in sorted(tile_counts.keys(), reverse=True):
+        print(f"  {tile}: {tile_counts[tile]} games")
+        
+        
 if __name__ == "__main__":
-    run()
+    # run()
+    run_experiment(10)
