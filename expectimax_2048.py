@@ -693,20 +693,6 @@ class GAME2048:
                         text_rect = text_surface.get_rect(center=(x + TILE_SIZE//2, y + TILE_SIZE//2))
                         screen.blit(text_surface, text_rect) 
                         
-        # Don't show game over screen in automated mode
-        # if self.game_over:
-        #     overlay = pygame.Surface((WINDOW_SIZE, T_WIN_SIZE))
-        #     overlay.set_alpha(180)
-        #     overlay.fill((0, 0, 0))
-        #     screen.blit(overlay, (0, 0))
-        #     
-        #     game_over_text = OVER_FONT.render("GAME OVER", True, (255, 255, 255))
-        #     text_rect = game_over_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2))
-        #     screen.blit(game_over_text, text_rect)
-        #     
-        #     restart_text = self.font.render("Press R to Restart", True, (255, 255, 255))
-        #     restart_rect = restart_text.get_rect(center=(WINDOW_SIZE//2, T_WIN_SIZE//2 + 50))
-        #     screen.blit(restart_text, restart_rect)
                     
     def animate_move(self, direction):
         self.moving_animation = True
