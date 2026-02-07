@@ -406,7 +406,7 @@ def run_experiment(num_games=100):
             if ai_mode and not game.game_over:
                 current_time = pygame.time.get_ticks() / 1000.0
                 if current_time - last_ai_move_time >= ai_delay:
-                    best_action = monte_carlo_search(game, runs_per_move=25)  # Reduced runs for speed
+                    best_action = monte_carlo_search(game, runs_per_move=30)  # Reduced runs for speed
                     moved = game.move(best_action)
                     
                     if moved:
@@ -477,4 +477,4 @@ def run_experiment(num_games=100):
         
 if __name__ == "__main__":
     # run()
-    run_experiment(10)
+    run_experiment(100)

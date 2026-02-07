@@ -885,4 +885,4 @@ def run_experiment(num_games=100):
 
 
 if __name__ == "__main__":
-    run_experiment(10)
+    run_experiment(100)

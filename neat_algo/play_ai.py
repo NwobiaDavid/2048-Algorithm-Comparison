@@ -49,7 +49,7 @@ with open(pickle_path, 'rb') as f:
 net = neat.nn.FeedForwardNetwork.create(winner, config)
 
 # Initialize expectimax searcher
-SEARCH_DEPTH = 4  
+SEARCH_DEPTH = 3
 searcher = ExpectimaxSearch(max_depth=SEARCH_DEPTH) if USE_SEARCH else None
 
 
@@ -327,4 +327,4 @@ def run_experiment(num_games=100):
         
 if __name__ == "__main__":
     # main()
-    run_experiment(10)
+    run_experiment(100)

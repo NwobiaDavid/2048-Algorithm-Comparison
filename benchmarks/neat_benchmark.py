@@ -9,8 +9,8 @@ def load_latest_neat_data():
     """Load the most recent neat results CSV file."""
     
     # pattern = "benchmarks/neat_results_*.csv"
-    pattern = "benchmarks/neat_with_search_results_*.csv"
-    # pattern = "benchmarks/neat_pure_network_results_*.csv"
+    # pattern = "benchmarks/neat_with_search_results_*.csv"
+    pattern = "benchmarks/neat_pure_network_results_*.csv"
     files = glob.glob(pattern)
     
     if not files:
@@ -45,8 +45,8 @@ def visualize_performance(df):
 
     fig = plt.figure(figsize=(18, 12))
     # plt.suptitle(f'2048 NEAT Algorithm Performance Analysis (N={len(df)})', fontsize=20, y=0.98)
-    plt.suptitle(f'2048 NEAT + Search Algorithm Performance Analysis (N={len(df)})', fontsize=20, y=0.98)
-    # plt.suptitle(f'2048 Pure NEAT Algorithm Performance Analysis (N={len(df)})', fontsize=20, y=0.98)
+    # plt.suptitle(f'2048 NEAT + Search Algorithm Performance Analysis (N={len(df)})', fontsize=20, y=0.98)
+    plt.suptitle(f'2048 Pure NEAT Algorithm Performance Analysis (N={len(df)})', fontsize=20, y=0.98)
     
     gs = fig.add_gridspec(2, 3)
 
@@ -94,8 +94,8 @@ def visualize_performance(df):
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
     
-    plt.savefig(f"benchmarks/graphs/neat_with_search_performance_dashboard.png", dpi=300, bbox_inches='tight')
-    # plt.savefig(f"benchmarks/graphs/neat_pure_network_performance_dashboard.png", dpi=300, bbox_inches='tight')
+    # plt.savefig(f"benchmarks/graphs/neat_with_search_performance_dashboard.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"benchmarks/graphs/neat_pure_network_performance_dashboard.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 def main():
