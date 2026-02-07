@@ -3,6 +3,7 @@
 A comparative study of three different Artificial Intelligence approaches designed to play the game **2048**. This project implements and analyzes the performance of **Expectimax**, **Monte Carlo**, and **NEAT (NeuroEvolution of Augmenting Topologies)**.
 
 > **Note:** This project serves as my introduction to Game AI. It represents my first attempt at teaching a computer to play a game, exploring various search and evolutionary strategies.
+**Key finding:** Explicit probabilistic search (Expectimax) significantly outperformed evolutionary and simulation-based approaches in this stochastic puzzle environment.
 
 ## 🎯 Project Overview
 
@@ -48,19 +49,41 @@ This approach uses genetic algorithms to evolve a neural network with 24 input f
 
 ## 📊 Methodology
 
-To fairly compare the algorithms, I conducted a controlled experiment:
+To ensure statistically significant comparisons, I conducted a rigorous benchmark:
 
-* **Sample Size:** Each algorithm played **50 full games**.
-* **Metrics:** I tracked the final score, the maximum tile achieved, and the number of moves per game.
-* **Visualization:** Data from these runs was aggregated and visualized to show performance distribution.
+* **Sample Size:** Each algorithm played **100 full games** to completion (or timeout)
+* **Metrics Tracked:** 
+  - Success rate (reaching 2048 tile)
+  - Final score (average, median, standard deviation)
+  - Maximum tile achieved
+  - Execution time per game
+  - Moves executed before termination
+* **Hardware:** All tests run on identical hardware to ensure fair comparison
 
 ## 🏆 Results & Comparison
 
-After running 50 tests for each agent, the data showed a clear winner.
+| Algorithm          | Success Rate | Avg Score | Avg Max Tile | Avg Time | Avg Moves |
+|--------------------|--------------|-----------|--------------|----------|-----------|
+| **Expectimax**     | **79.00%**   | 47,694    | 2,880        | 48.38s   | 2,276     |
+| Monte Carlo        | 15.00%       | 13,445    | 989          | 42.00s   | 783       |
+| NEAT + Expectimax  | 10.00%       | 11,279    | 829          | 13.82s   | 680       |
+| NEAT Pure          | 0.00%        | 2,433     | 185          | 1.92s    | 1,000   |
 
-**Winner: Expectimax** 🥇
 
-The Expectimax algorithm consistently outperformed the other approaches, achieving higher tile numbers and scores. While computationally more expensive than a simple neural net, its ability to look ahead and account for probability made it superior for this specific puzzle.
+
+### Key Findings
+
+**🥇 Expectimax Dominates**  
+With a **79% success rate** in reaching the 2048 tile, Expectimax demonstrated superior strategic planning through its probabilistic lookahead and sophisticated heuristics. Its median max tile of 2048 (with many runs reaching 4096+) confirms consistent high-level play despite computational cost.
+
+**🥈 Monte Carlo Shows Promise**  
+Achieving a **15% success rate** with significantly lower computation time than Expectimax, Monte Carlo proved effective for opportunistic play. Its strength lies in exploring diverse game trajectories through random playouts, though it lacks the deterministic planning needed for consistent high-tile achievement.
+
+**🥉 Hybrid NEAT+Expectimax Underperformed Expectations**  
+Despite theoretical advantages of neural-guided search, the hybrid approach achieved only **10% success**—likely due to suboptimal network evaluation functions that didn't complement the search algorithm effectively. This highlights the challenge of integrating learned heuristics with explicit search.
+
+**❌ Pure NEAT Failed to Generalize**  
+The pure neural network approach achieved **0% success rate**, consistently stalling around the 128-256 tile range. While extremely fast (1.92s/game), it lacked the strategic depth required for complex board states—demonstrating that raw speed cannot compensate for poor decision quality in this domain.
 
 ### Performance Visualizations
 ![Comparison Summary](benchmarks/graphs/comparison_summary.png)
@@ -69,6 +92,9 @@ The Expectimax algorithm consistently outperformed the other approaches, achievi
 * **Monte Carlo:** Showed moderate performance with 20% success rate, proving effective for short-term planning but struggling with long-term strategy due to random simulation limitations.
 * **NEAT + Expectimax:** Performed surprisingly well considering the hybrid approach, achieving 10% success rate by leveraging neural network guidance within the search framework.
 * **NEAT Pure:** While fastest in execution time, failed to achieve the target 2048 tile in any game, indicating that pure neural network control without search guidance wasn't sufficient for complex game states.
+
+
+> **Critical Insight:** Computational cost directly correlates with performance in 2048.
 
 ## 🛠️ Installation & Usage
 
@@ -95,9 +121,16 @@ git clone https://github.com/NwobiaDavid/2048-Algorithm-Comparison.git
 
 To run the Expectimax agent:
 
+
 ```bash
+# Run Expectimax agent
 python expectimax_2048.py
 
+# Run Monte Carlo agent  
+python mcts_2048.py
+
+# Run NEAT agent
+python neat_algo/train.py && python neat_algo/play_ai.py
 ```
 
 
