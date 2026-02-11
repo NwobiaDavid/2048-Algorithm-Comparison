@@ -2,7 +2,7 @@
 
 A comparative study of three AI approaches for playing 2048: **Expectimax**, **Monte Carlo**, and **NEAT**. This project explores which algorithmic strategy achieves the highest scores in this stochastic puzzle game.
 
-> **Note:** This was my first foray into Game AI—a learning project comparing search-based and evolutionary approaches.
+> **Note:** This was my first foray into Game AI (a learning project comparing search-based and evolutionary approaches)
 
 ## 🎯 Project Overview
 
